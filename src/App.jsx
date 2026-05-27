@@ -27,7 +27,7 @@ const PROFILES = [
    owner: profile id responsible (kid chores get XP)
    day: only used for weekly chores (for the themed schedule)
    ============================================================ */
-const CHORES = [
+const DEFAULT_CHORES = [
   // ---- DAILY ----
   // Kitchen
   { id: "d1", freq: "daily", room: "Kitchen", text: "Wipe counters & stovetop after cooking", owner: "adult_a", weight: 5 },
@@ -173,12 +173,14 @@ function periodKey(freq) {
 export default function App() {
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
+  const [chores, setChores] = useState(DEFAULT_CHORES); // loaded from Supabase, defaults until then
   const [completions, setCompletions] = useState({}); // { "choreId|periodKey": {by, at} }
   const [log, setLog] = useState([]); // permanent completion history: [{by, day, weight}]
   const [balance, setBalance] = useState(0);   // coins available to spend
   const [lifetime, setLifetime] = useState(0); // total coins ever earned (for rank)
   const [rewards, setRewards] = useState([]);  // catalog of redeemable rewards
   const [redemptions, setRedemptions] = useState([]); // pending/approved/denied
+  const [bonuses, setBonuses] = useState([]); // bonus coins given off-list
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const credsMissing =
@@ -191,6 +193,31 @@ export default function App() {
       return;
     }
     try {
+      // Load chores from Supabase. If empty, seed with defaults (one-time).
+      const { data: choreRows } = await supabase
+        .from("chores")
+        .select("*")
+        .order("sort_order", { ascending: true });
+
+      if (!choreRows || choreRows.length === 0) {
+        // First run: seed the table with the 67 default chores
+        const seed = DEFAULT_CHORES.map((c, i) => ({
+          id: c.id,
+          freq: c.freq,
+          day: c.day || null,
+          room: c.room || null,
+          text: c.text,
+          owner: c.owner,
+          weight: c.weight || 1,
+          active: true,
+          sort_order: i,
+        }));
+        await supabase.from("chores").insert(seed);
+        setChores(DEFAULT_CHORES);
+      } else {
+        setChores(choreRows.filter((c) => c.active));
+      }
+
       const { data: comps } = await supabase
         .from("completions")
         .select("*");
@@ -224,6 +251,14 @@ export default function App() {
         .limit(50);
       setRedemptions(redRows || []);
 
+      // bonus coins (off-list rewards)
+      const { data: bonusRows } = await supabase
+        .from("bonuses")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setBonuses(bonusRows || []);
+
       // permanent completion history (for stats + streaks)
       const { data: logRows } = await supabase
         .from("chore_log")
@@ -248,6 +283,8 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "chore_log" }, loadState)
       .on("postgres_changes", { event: "*", schema: "public", table: "rewards" }, loadState)
       .on("postgres_changes", { event: "*", schema: "public", table: "redemptions" }, loadState)
+      .on("postgres_changes", { event: "*", schema: "public", table: "chores" }, loadState)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bonuses" }, loadState)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [loadState, credsMissing]);
@@ -399,18 +436,44 @@ export default function App() {
     } catch (e) { console.error(e); showToast("Couldn't update"); }
   };
 
+  // ---- give bonus coins (off-list reward) ----
+  const giveBonus = async (amount, reason) => {
+    const amt = parseInt(amount, 10);
+    if (!amt || amt < 1) { showToast("Pick an amount"); return; }
+    const newBalance = balance + amt;
+    const newLifetime = lifetime + amt;
+    setBalance(newBalance);
+    setLifetime(newLifetime);
+    try {
+      await supabase.from("kid_progress").upsert({ id: "kid", balance: newBalance, lifetime: newLifetime });
+      await supabase.from("bonuses").insert({
+        amount: amt,
+        reason: (reason || "").trim() || null,
+        given_by: profile.id,
+      });
+      const beforeRank = getCurrentRank(lifetime);
+      const afterRank = getCurrentRank(newLifetime);
+      if (afterRank.level > beforeRank.level) {
+        showToast(`🎉 Bonus +${amt} 🪙 — Rank up! ${afterRank.icon} ${afterRank.name}!`);
+      } else {
+        showToast(`🎁 Bonus +${amt} 🪙 given!`);
+      }
+    } catch (e) { console.error(e); showToast("Couldn't save bonus"); }
+  };
+
   // ---- KID VIEW (gamified) ----
   if (profile.isKid) {
     return (
       <KidApp
         profile={profile}
-        chores={CHORES.filter((c) => c.owner === "kid")}
+        chores={chores.filter((c) => c.owner === "kid")}
         isDone={isDone}
         onToggleChore={toggleChore}
         balance={balance}
         lifetime={lifetime}
         rewards={rewards}
         redemptions={redemptions.filter((r) => r.requested_by === "kid")}
+        bonuses={bonuses}
         onRedeem={redeemReward}
         onSwitch={() => setProfile(null)}
         credsMissing={credsMissing}
@@ -427,9 +490,11 @@ export default function App() {
     { id: "stats", label: "Stats" },
     { id: "inbox", label: `Inbox${pendingCount ? ` (${pendingCount})` : ""}` },
     { id: "rewards", label: "Rewards" },
+    { id: "manage", label: "Chores" },
+    { id: "bonus", label: "Bonus 🎁" },
   ];
 
-  const todayChores = CHORES.filter((c) => {
+  const todayChores = chores.filter((c) => {
     if (c.freq === "daily") return true;
     const todayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date().getDay()];
     if (c.freq === "weekly") {
@@ -466,7 +531,7 @@ export default function App() {
 
       {view === "chart" &&
         ["daily", "weekly", "monthly"].map((freq) => {
-          const items = CHORES.filter((c) => c.freq === freq);
+          const items = chores.filter((c) => c.freq === freq);
           return (
             <div key={freq} style={S.section}>
               <div style={{ ...S.freqHeader, background: FREQ_META[freq].color }}>
@@ -498,6 +563,10 @@ export default function App() {
       {view === "inbox" && <InboxView redemptions={redemptions} onDecide={decideRedemption} />}
 
       {view === "rewards" && <RewardsAdminView rewards={rewards} showToast={showToast} />}
+
+      {view === "manage" && <ChoresAdminView chores={chores} showToast={showToast} />}
+
+      {view === "bonus" && <BonusView balance={balance} bonuses={bonuses} onGive={giveBonus} />}
 
       {toast && <div style={S.toast}>{toast}</div>}
     </div>
@@ -648,7 +717,7 @@ function StatsView({ log }) {
 }
 
 /* ---------------- Kid app (Quest mode with tabs) ---------------- */
-function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rewards, redemptions, onRedeem, onSwitch, credsMissing, toast }) {
+function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rewards, redemptions, bonuses, onRedeem, onSwitch, credsMissing, toast }) {
   const [tab, setTab] = useState("quests");
   const rank = getCurrentRank(lifetime);
   const nextRank = getNextRank(lifetime);
@@ -691,6 +760,17 @@ function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rew
 
       {tab === "quests" && (
         <>
+          {bonuses && bonuses.length > 0 && (
+            <div style={S.kidBonusBox}>
+              <div style={S.kidBonusTitle}>🎁 Recent bonuses</div>
+              {bonuses.slice(0, 3).map((b) => (
+                <div key={b.id} style={S.kidBonusItem}>
+                  <span style={{ fontWeight: 700, color: "#9c5a2c" }}>+{b.amount} 🪙</span>
+                  <span style={{ flex: 1, fontSize: 13 }}>{b.reason || "Bonus!"}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <h3 style={S.kidSection}>My Quests</h3>
           <div style={S.list}>
             {chores.map((c) => (
@@ -915,6 +995,223 @@ function RewardsAdminView({ rewards, showToast }) {
 }
 
 
+/* ---------------- Adult: Chores management ---------------- */
+function ChoresAdminView({ chores, showToast }) {
+  const [editing, setEditing] = useState(null);
+  const [filterFreq, setFilterFreq] = useState("all");
+  const [text, setText] = useState("");
+  const [weight, setWeight] = useState("");
+  const [owner, setOwner] = useState("shared");
+  const [freq, setFreq] = useState("daily");
+  const [day, setDay] = useState("Mon");
+  const [room, setRoom] = useState("");
+
+  const startNew = () => {
+    setEditing({});
+    setText(""); setWeight("5"); setOwner("shared"); setFreq("daily"); setDay("Mon"); setRoom("");
+  };
+  const startEdit = (c) => {
+    setEditing(c);
+    setText(c.text); setWeight(String(c.weight || 1)); setOwner(c.owner);
+    setFreq(c.freq); setDay(c.day || "Mon"); setRoom(c.room || "");
+  };
+  const cancel = () => setEditing(null);
+
+  const save = async () => {
+    const w = parseInt(weight, 10);
+    if (!text.trim() || !w || w < 1) { showToast("Need text and a weight"); return; }
+    const payload = {
+      text: text.trim(),
+      weight: w,
+      owner,
+      freq,
+      day: freq === "weekly" ? day : null,
+      room: room.trim() || null,
+      active: true,
+    };
+    try {
+      if (editing.id) {
+        await supabase.from("chores").update(payload).eq("id", editing.id);
+        showToast("Chore updated");
+      } else {
+        // generate a unique id for new chores
+        payload.id = `c${Date.now()}`;
+        payload.sort_order = chores.length + 1;
+        await supabase.from("chores").insert(payload);
+        showToast("Chore added");
+      }
+      setEditing(null);
+    } catch (e) { console.error(e); showToast("Couldn't save"); }
+  };
+
+  const remove = async (c) => {
+    if (!confirm(`Delete "${c.text}"?`)) return;
+    try {
+      await supabase.from("chores").update({ active: false }).eq("id", c.id);
+      showToast("Removed");
+    } catch (e) { console.error(e); }
+  };
+
+  const filtered = filterFreq === "all" ? chores : chores.filter((c) => c.freq === filterFreq);
+  const FREQS = [
+    { id: "all", label: "All" },
+    { id: "daily", label: "Daily" },
+    { id: "weekly", label: "Weekly" },
+    { id: "monthly", label: "Monthly" },
+  ];
+
+  return (
+    <div style={S.section}>
+      <div style={S.adminHeaderRow}>
+        <h3 style={S.adminSection}>📋 Manage chores ({chores.length})</h3>
+        {!editing && <button style={S.addBtn} onClick={startNew}>+ Add</button>}
+      </div>
+
+      {editing && (
+        <div style={S.editCard}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>{editing.id ? "Edit chore" : "New chore"}</div>
+          <label style={S.label}>What to do</label>
+          <input style={S.input} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g., Sweep the porch" />
+          <label style={S.label}>Effort (minutes / coins)</label>
+          <input style={S.input} type="number" min="1" value={weight} onChange={(e) => setWeight(e.target.value)} />
+          <label style={S.label}>Who does it</label>
+          <div style={S.segRow}>
+            {[{id:"adult_a",l:"Adult A"},{id:"adult_b",l:"Adult B"},{id:"kid",l:"Kid"},{id:"shared",l:"Shared"}].map((o) => (
+              <button key={o.id} style={{ ...S.segBtn, ...(owner === o.id ? S.segBtnActive : {}) }} onClick={() => setOwner(o.id)}>{o.l}</button>
+            ))}
+          </div>
+          <label style={S.label}>How often</label>
+          <div style={S.segRow}>
+            {["daily","weekly","monthly"].map((f) => (
+              <button key={f} style={{ ...S.segBtn, ...(freq === f ? S.segBtnActive : {}) }} onClick={() => setFreq(f)}>{f}</button>
+            ))}
+          </div>
+          {freq === "weekly" && (
+            <>
+              <label style={S.label}>Which day</label>
+              <div style={S.segRow}>
+                {["Mon","Tue","Wed","Thu","Fri","Wknd"].map((d) => (
+                  <button key={d} style={{ ...S.segBtn, ...(day === d ? S.segBtnActive : {}) }} onClick={() => setDay(d)}>{d}</button>
+                ))}
+              </div>
+            </>
+          )}
+          <label style={S.label}>Room (optional)</label>
+          <input style={S.input} value={room} onChange={(e) => setRoom(e.target.value)} placeholder="Kitchen, Bathrooms, etc." />
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button style={S.saveBtn} onClick={save}>Save</button>
+            <button style={S.cancelBtn} onClick={cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={S.segRow}>
+        {FREQS.map((f) => (
+          <button key={f.id} style={{ ...S.segBtn, ...(filterFreq === f.id ? S.segBtnActive : {}) }} onClick={() => setFilterFreq(f.id)}>{f.label}</button>
+        ))}
+      </div>
+
+      {filtered.map((c) => (
+        <div key={c.id} style={S.choreAdminRow}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{c.text}</div>
+            <div style={{ fontSize: 11, color: "#6b7c8c", marginTop: 2 }}>
+              {c.freq}{c.day ? ` · ${c.day}` : ""}{c.room ? ` · ${c.room}` : ""} · 🪙{c.weight} · {ownerShortName(c.owner)}
+            </div>
+          </div>
+          <button style={S.smallBtn} onClick={() => startEdit(c)}>Edit</button>
+          <button style={{ ...S.smallBtn, color: "#c0392b" }} onClick={() => remove(c)}>Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ownerShortName(id) {
+  if (id === "adult_a") return "Adult A";
+  if (id === "adult_b") return "Adult B";
+  if (id === "kid") return "Kid";
+  return "Shared";
+}
+
+/* ---------------- Adult: Give bonus coins ---------------- */
+function BonusView({ balance, bonuses, onGive }) {
+  const [amount, setAmount] = useState(10);
+  const [custom, setCustom] = useState("");
+  const [reason, setReason] = useState("");
+  const PRESETS = [5, 10, 25, 50];
+
+  const submit = () => {
+    const amt = custom ? parseInt(custom, 10) : amount;
+    if (!amt) return;
+    onGive(amt, reason);
+    setReason("");
+    setCustom("");
+    setAmount(10);
+  };
+
+  return (
+    <div style={S.section}>
+      <h3 style={S.adminSection}>🎁 Give bonus coins</h3>
+      <div style={S.balanceCard}>Kid currently has <strong>🪙 {balance}</strong></div>
+
+      <label style={S.label}>Quick amount</label>
+      <div style={S.segRow}>
+        {PRESETS.map((p) => (
+          <button
+            key={p}
+            style={{ ...S.segBtn, ...(amount === p && !custom ? S.segBtnActive : {}) }}
+            onClick={() => { setAmount(p); setCustom(""); }}
+          >
+            +{p} 🪙
+          </button>
+        ))}
+      </div>
+
+      <label style={S.label}>Or custom amount</label>
+      <input
+        style={S.input}
+        type="number"
+        min="1"
+        value={custom}
+        onChange={(e) => setCustom(e.target.value)}
+        placeholder="Type any amount"
+      />
+
+      <label style={S.label}>Reason (optional, shown to kid)</label>
+      <input
+        style={S.input}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="e.g., Helped without being asked"
+        maxLength={80}
+      />
+
+      <button style={{ ...S.saveBtn, marginTop: 14, width: "100%" }} onClick={submit}>
+        Give +{custom || amount} 🪙
+      </button>
+
+      {bonuses.length > 0 && (
+        <>
+          <h3 style={{ ...S.adminSection, marginTop: 22 }}>Recent bonuses</h3>
+          {bonuses.slice(0, 10).map((b) => (
+            <div key={b.id} style={S.bonusRow}>
+              <span style={S.bonusAmount}>+{b.amount} 🪙</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{b.reason || "Bonus"}</div>
+                <div style={{ fontSize: 11, color: "#6b7c8c" }}>
+                  Given by {ownerShortName(b.given_by)} · {timeAgo(b.created_at)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+
 function Header() {
   return (
     <div style={S.header}>
@@ -1045,6 +1342,15 @@ const S = {
   redemptionCard: { display: "flex", alignItems: "center", gap: 10, padding: "12px 10px", background: "#fff", border: "1.5px solid #e3ebf0", borderRadius: 10, marginBottom: 8 },
   approveBtn: { background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   denyBtn: { background: "#fff", color: "#c0392b", border: "1.5px solid #e8b8b0", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  segRow: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 },
+  segBtn: { flex: "1 1 auto", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 12, minWidth: 60, textTransform: "capitalize" },
+  segBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
+  choreAdminRow: { display: "flex", alignItems: "center", gap: 8, padding: "10px 8px", borderBottom: "1px solid #eef3f6" },
+  bonusRow: { display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderBottom: "1px solid #eef3f6" },
+  bonusAmount: { fontSize: 16, fontWeight: 800, color: "#9c5a2c", minWidth: 60 },
+  kidBonusBox: { background: "linear-gradient(135deg,#fff4e0,#ffe5c0)", border: "2px solid #f0c97a", borderRadius: 14, padding: "12px 14px", marginBottom: 16 },
+  kidBonusTitle: { fontWeight: 800, color: "#8a5a1a", marginBottom: 6, fontSize: 14 },
+  kidBonusItem: { display: "flex", alignItems: "center", gap: 10, padding: "4px 0", color: "#5a3a0a" },
   xpBarOuter: { background: "rgba(255,255,255,0.3)", borderRadius: 20, height: 16, margin: "12px 0 6px", overflow: "hidden" },
   xpBarInner: { background: "#ffd56b", height: "100%", borderRadius: 20, transition: "width 0.4s" },
   xpText: { fontSize: 12, opacity: 0.95 },
