@@ -123,14 +123,32 @@ const FREQ_META = {
   monthly: { label: "Monthly", color: "#9c5a2c", reset: "Resets on the 1st" },
 };
 
-const XP_PER_CHORE = 10;
-const BADGES = [
-  { id: "first", name: "First Chore", emoji: "⭐", xp: 10 },
-  { id: "helper", name: "Helper", emoji: "🧹", xp: 50 },
-  { id: "star", name: "Star Cleaner", emoji: "🌟", xp: 150 },
-  { id: "hero", name: "Chore Hero", emoji: "🦸", xp: 300 },
-  { id: "legend", name: "House Legend", emoji: "👑", xp: 600 },
+/* ============================================================
+   COIN ECONOMY & RANKS (Nolan's Quest style)
+   - Coins earned per chore = chore.weight (heavier work = more pay)
+   - Coins spent on rewards in the catalog
+   - Ranks are pure progression milestones based on lifetime coins earned
+   ============================================================ */
+const COINS_PER_WEIGHT = 1; // 1 coin per minute of effort
+
+const RANKS = [
+  { level: 1, name: "Squire",        icon: "🛡️", minCoins: 0 },
+  { level: 2, name: "Page",          icon: "⚔️", minCoins: 100 },
+  { level: 3, name: "Knight",        icon: "🗡️", minCoins: 300 },
+  { level: 4, name: "Champion",      icon: "🏆", minCoins: 600 },
+  { level: 5, name: "Hero",          icon: "⭐", minCoins: 1000 },
+  { level: 6, name: "Legend",        icon: "👑", minCoins: 1500 },
+  { level: 7, name: "Dragon Master", icon: "🐉", minCoins: 2500 },
 ];
+
+function getCurrentRank(lifetime) {
+  let rank = RANKS[0];
+  for (const r of RANKS) if (lifetime >= r.minCoins) rank = r;
+  return rank;
+}
+function getNextRank(lifetime) {
+  return RANKS.find((r) => r.minCoins > lifetime) || null;
+}
 
 /* ---------- date-key helpers for auto-reset ---------- */
 function dailyKey(d = new Date()) {
@@ -157,7 +175,10 @@ export default function App() {
   const [view, setView] = useState("today");
   const [completions, setCompletions] = useState({}); // { "choreId|periodKey": {by, at} }
   const [log, setLog] = useState([]); // permanent completion history: [{by, day, weight}]
-  const [xp, setXp] = useState(0);
+  const [balance, setBalance] = useState(0);   // coins available to spend
+  const [lifetime, setLifetime] = useState(0); // total coins ever earned (for rank)
+  const [rewards, setRewards] = useState([]);  // catalog of redeemable rewards
+  const [redemptions, setRedemptions] = useState([]); // pending/approved/denied
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const credsMissing =
@@ -181,10 +202,27 @@ export default function App() {
 
       const { data: kid } = await supabase
         .from("kid_progress")
-        .select("xp")
+        .select("balance, lifetime")
         .eq("id", "kid")
         .maybeSingle();
-      setXp(kid?.xp || 0);
+      setBalance(kid?.balance || 0);
+      setLifetime(kid?.lifetime || 0);
+
+      // reward catalog
+      const { data: rewardRows } = await supabase
+        .from("rewards")
+        .select("*")
+        .eq("active", true)
+        .order("cost", { ascending: true });
+      setRewards(rewardRows || []);
+
+      // redemption requests (pending + recent)
+      const { data: redRows } = await supabase
+        .from("redemptions")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setRedemptions(redRows || []);
 
       // permanent completion history (for stats + streaks)
       const { data: logRows } = await supabase
@@ -208,6 +246,8 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "completions" }, loadState)
       .on("postgres_changes", { event: "*", schema: "public", table: "kid_progress" }, loadState)
       .on("postgres_changes", { event: "*", schema: "public", table: "chore_log" }, loadState)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rewards" }, loadState)
+      .on("postgres_changes", { event: "*", schema: "public", table: "redemptions" }, loadState)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, [loadState, credsMissing]);
@@ -258,13 +298,25 @@ export default function App() {
         );
         setLog((prev) => [{ by: profile.id, day: today, weight: chore.weight || 1, choreId: chore.id, pk }, ...prev]);
       }
-      // XP for kid-owned chores
+      // Coins for kid-owned chores (earn = chore weight)
       if (chore.owner === "kid") {
-        const delta = isDone ? -XP_PER_CHORE : XP_PER_CHORE;
-        const newXp = Math.max(0, xp + delta);
-        setXp(newXp);
-        await supabase.from("kid_progress").upsert({ id: "kid", xp: newXp });
-        if (!isDone) showToast(`+${XP_PER_CHORE} XP! 🎉`);
+        const coins = (chore.weight || 1) * COINS_PER_WEIGHT;
+        const delta = isDone ? -coins : coins;
+        const newBalance = Math.max(0, balance + delta);
+        // lifetime only grows, never goes below previous (un-checking shouldn't strip rank)
+        const newLifetime = isDone ? lifetime : lifetime + coins;
+        setBalance(newBalance);
+        setLifetime(newLifetime);
+        await supabase.from("kid_progress").upsert({ id: "kid", balance: newBalance, lifetime: newLifetime });
+        if (!isDone) {
+          const beforeRank = getCurrentRank(lifetime);
+          const afterRank = getCurrentRank(newLifetime);
+          if (afterRank.level > beforeRank.level) {
+            showToast(`🎉 Rank up! ${afterRank.icon} ${afterRank.name}!`);
+          } else {
+            showToast(`+${coins} 🪙`);
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -308,49 +360,73 @@ export default function App() {
     );
   }
 
+  // ---- redemption handlers (used by kid + adult views) ----
+  const redeemReward = async (reward) => {
+    if (balance < reward.cost) {
+      showToast(`Need ${reward.cost - balance} more 🪙`);
+      return;
+    }
+    const newBalance = balance - reward.cost;
+    setBalance(newBalance);
+    try {
+      await supabase.from("kid_progress").upsert({ id: "kid", balance: newBalance, lifetime });
+      await supabase.from("redemptions").insert({
+        reward_id: reward.id,
+        reward_name: reward.name,
+        reward_icon: reward.icon,
+        cost: reward.cost,
+        status: "pending",
+        requested_by: "kid",
+      });
+      showToast(`🎁 Redeemed! Waiting for approval`);
+    } catch (e) { console.error(e); showToast("Couldn't redeem"); }
+  };
+
+  const decideRedemption = async (red, status) => {
+    try {
+      await supabase.from("redemptions").update({
+        status,
+        decided_by: profile.id,
+        decided_at: new Date().toISOString(),
+      }).eq("id", red.id);
+      // if denied, refund the coins
+      if (status === "denied") {
+        const newBalance = balance + red.cost;
+        setBalance(newBalance);
+        await supabase.from("kid_progress").upsert({ id: "kid", balance: newBalance, lifetime });
+      }
+      showToast(status === "approved" ? "Approved! 🎉" : "Denied — coins refunded");
+    } catch (e) { console.error(e); showToast("Couldn't update"); }
+  };
+
   // ---- KID VIEW (gamified) ----
   if (profile.isKid) {
-    const myChores = CHORES.filter((c) => c.owner === "kid");
-    const level = Math.floor(xp / 100) + 1;
-    const xpInLevel = xp % 100;
-    const earned = BADGES.filter((b) => xp >= b.xp);
-    const nextBadge = BADGES.find((b) => xp < b.xp);
-
     return (
-      <div style={S.app}>
-        <TopBar profile={profile} onSwitch={() => setProfile(null)} />
-        {credsMissing && <SetupBanner />}
-        <div style={S.kidHero}>
-          <div style={{ fontSize: 30 }}>{profile.emoji} Level {level}</div>
-          <div style={S.xpBarOuter}>
-            <div style={{ ...S.xpBarInner, width: `${xpInLevel}%` }} />
-          </div>
-          <div style={S.xpText}>{xp} XP total • {100 - xpInLevel} XP to level {level + 1}</div>
-          <div style={S.badgeRow}>
-            {BADGES.map((b) => (
-              <span key={b.id} style={{ ...S.badge, opacity: earned.includes(b) ? 1 : 0.25 }} title={b.name}>
-                {b.emoji}
-              </span>
-            ))}
-          </div>
-          {nextBadge && <div style={S.nextBadge}>Next: {nextBadge.emoji} {nextBadge.name} at {nextBadge.xp} XP</div>}
-        </div>
-        <h3 style={S.kidSection}>My Jobs</h3>
-        <div style={S.list}>
-          {myChores.map((c) => (
-            <KidChoreRow key={c.id} chore={c} done={isDone(c)} onToggle={() => toggleChore(c)} />
-          ))}
-        </div>
-        {toast && <div style={S.toast}>{toast}</div>}
-      </div>
+      <KidApp
+        profile={profile}
+        chores={CHORES.filter((c) => c.owner === "kid")}
+        isDone={isDone}
+        onToggleChore={toggleChore}
+        balance={balance}
+        lifetime={lifetime}
+        rewards={rewards}
+        redemptions={redemptions.filter((r) => r.requested_by === "kid")}
+        onRedeem={redeemReward}
+        onSwitch={() => setProfile(null)}
+        credsMissing={credsMissing}
+        toast={toast}
+      />
     );
   }
 
   // ---- ADULT VIEWS ----
+  const pendingCount = redemptions.filter((r) => r.status === "pending").length;
   const tabs = [
     { id: "today", label: "Today" },
-    { id: "chart", label: "Full Chart" },
+    { id: "chart", label: "Chart" },
     { id: "stats", label: "Stats" },
+    { id: "inbox", label: `Inbox${pendingCount ? ` (${pendingCount})` : ""}` },
+    { id: "rewards", label: "Rewards" },
   ];
 
   const todayChores = CHORES.filter((c) => {
@@ -418,6 +494,10 @@ export default function App() {
         })}
 
       {view === "stats" && <StatsView log={log} />}
+
+      {view === "inbox" && <InboxView redemptions={redemptions} onDecide={decideRedemption} />}
+
+      {view === "rewards" && <RewardsAdminView rewards={rewards} showToast={showToast} />}
 
       {toast && <div style={S.toast}>{toast}</div>}
     </div>
@@ -567,7 +647,274 @@ function StatsView({ log }) {
   );
 }
 
-/* ---------------- components ---------------- */
+/* ---------------- Kid app (Quest mode with tabs) ---------------- */
+function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rewards, redemptions, onRedeem, onSwitch, credsMissing, toast }) {
+  const [tab, setTab] = useState("quests");
+  const rank = getCurrentRank(lifetime);
+  const nextRank = getNextRank(lifetime);
+  const intoRank = lifetime - rank.minCoins;
+  const ofRank = nextRank ? nextRank.minCoins - rank.minCoins : 1;
+  const pct = nextRank ? Math.min(100, Math.round((intoRank / ofRank) * 100)) : 100;
+
+  return (
+    <div style={S.app}>
+      <TopBar profile={profile} onSwitch={onSwitch} />
+      {credsMissing && <SetupBanner />}
+
+      {/* Quest hero card */}
+      <div style={S.questHero}>
+        <div style={S.rankBig}>{rank.icon}</div>
+        <div style={S.rankName}>{rank.name}</div>
+        <div style={S.coinsBig}>🪙 {balance}</div>
+        <div style={S.xpBarOuter}>
+          <div style={{ ...S.xpBarInner, width: `${pct}%` }} />
+        </div>
+        <div style={S.xpText}>
+          {nextRank
+            ? `${nextRank.minCoins - lifetime} coins to ${nextRank.icon} ${nextRank.name}`
+            : `Max rank reached! ${lifetime} lifetime coins`}
+        </div>
+        <div style={S.rankRow}>
+          {RANKS.map((r) => (
+            <span key={r.level} style={{ ...S.rankPip, opacity: lifetime >= r.minCoins ? 1 : 0.3 }} title={`${r.name} (${r.minCoins})`}>
+              {r.icon}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={S.tabBar}>
+        <button style={{ ...S.tab, ...(tab === "quests" ? S.tabActive : {}) }} onClick={() => setTab("quests")}>⚔️ Quests</button>
+        <button style={{ ...S.tab, ...(tab === "rewards" ? S.tabActive : {}) }} onClick={() => setTab("rewards")}>🎁 Rewards</button>
+      </div>
+
+      {tab === "quests" && (
+        <>
+          <h3 style={S.kidSection}>My Quests</h3>
+          <div style={S.list}>
+            {chores.map((c) => (
+              <KidChoreRow key={c.id} chore={c} done={isDone(c)} onToggle={() => onToggleChore(c)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {tab === "rewards" && (
+        <KidRewardsTab rewards={rewards} balance={balance} redemptions={redemptions} onRedeem={onRedeem} />
+      )}
+
+      {toast && <div style={S.toast}>{toast}</div>}
+    </div>
+  );
+}
+
+function KidRewardsTab({ rewards, balance, redemptions, onRedeem }) {
+  const pending = redemptions.filter((r) => r.status === "pending");
+  const approved = redemptions.filter((r) => r.status === "approved").slice(0, 3);
+
+  return (
+    <div style={S.section}>
+      <div style={S.balanceCard}>You have <strong>🪙 {balance}</strong> coins to spend</div>
+
+      {pending.length > 0 && (
+        <div style={S.pendingBox}>
+          <div style={S.pendingTitle}>⏳ Waiting for approval</div>
+          {pending.map((r) => (
+            <div key={r.id} style={S.pendingItem}>
+              <span style={{ fontSize: 20 }}>{r.reward_icon || "🎁"}</span>
+              <span style={{ flex: 1 }}>{r.reward_name}</span>
+              <span style={S.pendingCost}>🪙 {r.cost}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {approved.length > 0 && (
+        <div style={S.approvedBox}>
+          <div style={S.approvedTitle}>✅ Recently approved</div>
+          {approved.map((r) => (
+            <div key={r.id} style={S.pendingItem}>
+              <span style={{ fontSize: 18 }}>{r.reward_icon || "🎁"}</span>
+              <span style={{ flex: 1 }}>{r.reward_name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3 style={S.kidSection}>🎁 Reward Shop</h3>
+      {rewards.length === 0 ? (
+        <div style={S.emptyStats}>
+          <div style={{ fontSize: 36 }}>🎁</div>
+          <p style={{ color: "#6b7c8c", marginTop: 8 }}>
+            No rewards yet! Ask a grown-up to add some in the Rewards tab.
+          </p>
+        </div>
+      ) : (
+        <div style={S.rewardGrid}>
+          {rewards.map((r) => {
+            const canAfford = balance >= r.cost;
+            return (
+              <button key={r.id} style={{ ...S.rewardCard, opacity: canAfford ? 1 : 0.5 }} onClick={() => canAfford && onRedeem(r)} disabled={!canAfford}>
+                <span style={{ fontSize: 32 }}>{r.icon || "🎁"}</span>
+                <span style={S.rewardName}>{r.name}</span>
+                <span style={S.rewardCost}>🪙 {r.cost}</span>
+                {!canAfford && <span style={S.rewardNeed}>{r.cost - balance} more</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Adult: Inbox (pending redemptions) ---------------- */
+function InboxView({ redemptions, onDecide }) {
+  const pending = redemptions.filter((r) => r.status === "pending");
+  const recent = redemptions.filter((r) => r.status !== "pending").slice(0, 10);
+
+  return (
+    <div style={S.section}>
+      <h3 style={S.adminSection}>⏳ Pending requests</h3>
+      {pending.length === 0 ? (
+        <div style={S.emptyStats}>
+          <div style={{ fontSize: 36 }}>📭</div>
+          <p style={{ color: "#6b7c8c", marginTop: 8 }}>No pending requests right now.</p>
+        </div>
+      ) : (
+        pending.map((r) => (
+          <div key={r.id} style={S.redemptionCard}>
+            <span style={{ fontSize: 32 }}>{r.reward_icon || "🎁"}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>{r.reward_name}</div>
+              <div style={{ fontSize: 12, color: "#6b7c8c" }}>Cost: 🪙 {r.cost} • requested {timeAgo(r.created_at)}</div>
+            </div>
+            <button style={S.approveBtn} onClick={() => onDecide(r, "approved")}>✓ Approve</button>
+            <button style={S.denyBtn} onClick={() => onDecide(r, "denied")}>✗ Deny</button>
+          </div>
+        ))
+      )}
+
+      {recent.length > 0 && (
+        <>
+          <h3 style={{ ...S.adminSection, marginTop: 22 }}>Recent decisions</h3>
+          {recent.map((r) => (
+            <div key={r.id} style={{ ...S.redemptionCard, opacity: 0.7 }}>
+              <span style={{ fontSize: 22 }}>{r.reward_icon || "🎁"}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{r.reward_name}</div>
+                <div style={{ fontSize: 11, color: "#6b7c8c" }}>
+                  {r.status === "approved" ? "✅ Approved" : "❌ Denied"} • {timeAgo(r.decided_at)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function timeAgo(iso) {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+/* ---------------- Adult: Rewards management (catalog) ---------------- */
+function RewardsAdminView({ rewards, showToast }) {
+  const [editing, setEditing] = useState(null); // reward being edited, or {} for new
+  const [name, setName] = useState("");
+  const [cost, setCost] = useState("");
+  const [icon, setIcon] = useState("🎁");
+
+  const startNew = () => { setEditing({}); setName(""); setCost(""); setIcon("🎁"); };
+  const startEdit = (r) => { setEditing(r); setName(r.name); setCost(String(r.cost)); setIcon(r.icon || "🎁"); };
+  const cancel = () => setEditing(null);
+
+  const save = async () => {
+    const c = parseInt(cost, 10);
+    if (!name.trim() || !c || c < 1) { showToast("Need a name and a cost"); return; }
+    try {
+      if (editing.id) {
+        await supabase.from("rewards").update({ name: name.trim(), cost: c, icon }).eq("id", editing.id);
+        showToast("Reward updated");
+      } else {
+        await supabase.from("rewards").insert({ name: name.trim(), cost: c, icon, active: true });
+        showToast("Reward added");
+      }
+      setEditing(null);
+    } catch (e) { console.error(e); showToast("Couldn't save"); }
+  };
+
+  const deactivate = async (r) => {
+    if (!confirm(`Remove "${r.name}" from the shop?`)) return;
+    try {
+      await supabase.from("rewards").update({ active: false }).eq("id", r.id);
+      showToast("Removed");
+    } catch (e) { console.error(e); }
+  };
+
+  const ICONS = ["🎁", "🍦", "🎮", "📺", "🍕", "🧸", "💰", "🎬", "🏀", "🎨", "📱", "🚗", "🍪", "⚾", "🎯", "🏊"];
+
+  return (
+    <div style={S.section}>
+      <div style={S.adminHeaderRow}>
+        <h3 style={S.adminSection}>🎁 Reward catalog</h3>
+        {!editing && <button style={S.addBtn} onClick={startNew}>+ Add</button>}
+      </div>
+
+      {editing && (
+        <div style={S.editCard}>
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>{editing.id ? "Edit reward" : "New reward"}</div>
+          <label style={S.label}>Name</label>
+          <input style={S.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Ice cream trip" />
+          <label style={S.label}>Cost (coins)</label>
+          <input style={S.input} type="number" min="1" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="50" />
+          <label style={S.label}>Icon</label>
+          <div style={S.iconGrid}>
+            {ICONS.map((i) => (
+              <button key={i} style={{ ...S.iconBtn, ...(icon === i ? S.iconBtnActive : {}) }} onClick={() => setIcon(i)}>{i}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button style={S.saveBtn} onClick={save}>Save</button>
+            <button style={S.cancelBtn} onClick={cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {rewards.length === 0 && !editing ? (
+        <div style={S.emptyStats}>
+          <div style={{ fontSize: 36 }}>🎁</div>
+          <p style={{ color: "#6b7c8c", marginTop: 8 }}>
+            No rewards yet. Tap "+ Add" to create the first one.
+          </p>
+        </div>
+      ) : (
+        rewards.map((r) => (
+          <div key={r.id} style={S.rewardAdminRow}>
+            <span style={{ fontSize: 26 }}>{r.icon || "🎁"}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{r.name}</div>
+              <div style={{ fontSize: 12, color: "#6b7c8c" }}>🪙 {r.cost}</div>
+            </div>
+            <button style={S.smallBtn} onClick={() => startEdit(r)}>Edit</button>
+            <button style={{ ...S.smallBtn, color: "#c0392b" }} onClick={() => deactivate(r)}>Remove</button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+
 function Header() {
   return (
     <div style={S.header}>
@@ -664,6 +1011,40 @@ const S = {
   roomTag: { fontSize: 10.5, fontWeight: 600, color: "#5a6b7a", background: "#eef3f6", padding: "1px 7px", borderRadius: 8, textTransform: "uppercase", letterSpacing: 0.3 },
   doneBy: { color: "#9aa8b5" },
   kidHero: { background: "linear-gradient(135deg,#9c5a2c,#c97c3f)", color: "#fff", borderRadius: 18, padding: "20px 18px", textAlign: "center", marginBottom: 18 },
+  questHero: { background: "linear-gradient(135deg,#3a2c5e,#7c4adb)", color: "#fff", borderRadius: 18, padding: "20px 18px", textAlign: "center", marginBottom: 14, boxShadow: "0 4px 14px rgba(60,30,120,0.25)" },
+  rankBig: { fontSize: 56, lineHeight: 1 },
+  rankName: { fontSize: 20, fontWeight: 800, marginTop: 4, letterSpacing: 0.5 },
+  coinsBig: { fontSize: 22, fontWeight: 700, color: "#ffd56b", marginTop: 6 },
+  rankRow: { display: "flex", justifyContent: "center", gap: 10, marginTop: 14, fontSize: 24 },
+  rankPip: { transition: "opacity 0.3s" },
+  balanceCard: { background: "#fff7e0", border: "2px solid #f0c97a", borderRadius: 12, padding: "10px 14px", textAlign: "center", marginBottom: 14, color: "#8a5a1a" },
+  pendingBox: { background: "#fff4e0", border: "1.5px solid #f0c97a", borderRadius: 10, padding: 10, marginBottom: 12 },
+  pendingTitle: { fontWeight: 700, color: "#8a5a1a", marginBottom: 6, fontSize: 13 },
+  pendingItem: { display: "flex", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 14 },
+  pendingCost: { color: "#8a5a1a", fontWeight: 600 },
+  approvedBox: { background: "#e8f5ec", border: "1.5px solid #a5d4b3", borderRadius: 10, padding: 10, marginBottom: 12 },
+  approvedTitle: { fontWeight: 700, color: "#2d6b3f", marginBottom: 6, fontSize: 13 },
+  rewardGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  rewardCard: { background: "#fff", border: "2px solid #d4c5e8", borderRadius: 14, padding: "16px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" },
+  rewardName: { fontSize: 14, fontWeight: 600, textAlign: "center", color: "#3a2c5e" },
+  rewardCost: { fontSize: 13, fontWeight: 700, color: "#9c5a2c" },
+  rewardNeed: { fontSize: 11, color: "#c0392b" },
+  adminSection: { color: "#2c5f7c", fontSize: 17, margin: "0 0 10px" },
+  adminHeaderRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  addBtn: { background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: 14 },
+  editCard: { background: "#f8fbfd", border: "1.5px solid #c5d4de", borderRadius: 12, padding: 14, marginBottom: 14 },
+  label: { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7c8c", marginTop: 8, marginBottom: 4 },
+  input: { width: "100%", padding: "8px 10px", border: "1.5px solid #c5d4de", borderRadius: 8, fontSize: 14, boxSizing: "border-box" },
+  iconGrid: { display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 },
+  iconBtn: { background: "#fff", border: "1.5px solid #dce5ec", borderRadius: 8, padding: "6px 0", fontSize: 18, cursor: "pointer" },
+  iconBtnActive: { background: "#eef3f6", borderColor: "#2c5f7c" },
+  saveBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontWeight: 700, cursor: "pointer" },
+  cancelBtn: { flex: 1, background: "#fff", color: "#6b7c8c", border: "1.5px solid #c5d4de", borderRadius: 8, padding: "10px 0", fontWeight: 600, cursor: "pointer" },
+  rewardAdminRow: { display: "flex", alignItems: "center", gap: 10, padding: "10px 8px", borderBottom: "1px solid #eef3f6" },
+  smallBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" },
+  redemptionCard: { display: "flex", alignItems: "center", gap: 10, padding: "12px 10px", background: "#fff", border: "1.5px solid #e3ebf0", borderRadius: 10, marginBottom: 8 },
+  approveBtn: { background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  denyBtn: { background: "#fff", color: "#c0392b", border: "1.5px solid #e8b8b0", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
   xpBarOuter: { background: "rgba(255,255,255,0.3)", borderRadius: 20, height: 16, margin: "12px 0 6px", overflow: "hidden" },
   xpBarInner: { background: "#ffd56b", height: "100%", borderRadius: 20, transition: "width 0.4s" },
   xpText: { fontSize: 12, opacity: 0.95 },
