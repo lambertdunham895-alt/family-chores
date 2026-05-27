@@ -965,7 +965,7 @@ function KidChoreRow({ chore, done, onToggle }) {
     <div style={{ ...S.kidRow, ...(done ? S.kidRowDone : {}) }} onClick={onToggle}>
       <div style={{ ...S.kidCheck, ...(done ? S.kidCheckOn : {}) }}>{done ? "✓" : ""}</div>
       <span style={{ ...S.kidRowText, textDecoration: done ? "line-through" : "none" }}>{chore.text}</span>
-      <span style={S.kidXp}>{done ? "✅" : `+${XP_PER_CHORE}`}</span>
+      <span style={S.kidXp}>{done ? "✅" : `+${chore.weight || 1}🪙`}</span>
     </div>
   );
 }
