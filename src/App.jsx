@@ -9,6 +9,13 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://ehhzfrltrpqpgyohoqlg.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVoaHpmcmx0cnBxcGd5b2hvcWxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2ODc1NTksImV4cCI6MjA5NTI2MzU1OX0.xqwBefqLBOGNb3DU3NTQ8UHvWUM4Czreq5nkq72o9SA";
 
+/* ============================================================
+   FAMILY PIN — change this 4-digit code to something only your
+   household knows. Required to unlock the app on each device.
+   ============================================================ */
+const FAMILY_PIN = "0344";
+const PIN_REMEMBER_DAYS = 30;
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 /* ============================================================
@@ -171,6 +178,14 @@ function periodKey(freq) {
 }
 
 export default function App() {
+  const [unlocked, setUnlocked] = useState(() => {
+    try {
+      const saved = localStorage.getItem("family_pin_unlock");
+      if (!saved) return false;
+      const expires = parseInt(saved, 10);
+      return Date.now() < expires;
+    } catch { return false; }
+  });
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
   const [chores, setChores] = useState(DEFAULT_CHORES); // loaded from Supabase, defaults until then
@@ -366,6 +381,19 @@ export default function App() {
 
   /* ============================ RENDER ============================ */
 
+  // ---- PIN lock gate (before anything else) ----
+  if (!unlocked) {
+    return (
+      <PinLock
+        onUnlock={() => {
+          const expires = Date.now() + PIN_REMEMBER_DAYS * 24 * 60 * 60 * 1000;
+          try { localStorage.setItem("family_pin_unlock", String(expires)); } catch {}
+          setUnlocked(true);
+        }}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div style={S.center}>
@@ -391,6 +419,18 @@ export default function App() {
                 {p.isKid && <span style={S.kidTag}>🎮 Game mode</span>}
               </button>
             ))}
+          </div>
+          <div style={{ textAlign: "center", marginTop: 24 }}>
+            <button
+              style={{ ...S.switchBtn, fontSize: 12 }}
+              onClick={() => {
+                if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
+                try { localStorage.removeItem("family_pin_unlock"); } catch {}
+                window.location.reload();
+              }}
+            >
+              🔒 Lock this device
+            </button>
           </div>
         </div>
       </div>
@@ -1212,6 +1252,68 @@ function BonusView({ balance, bonuses, onGive }) {
 }
 
 
+/* ---------------- PIN lock screen ---------------- */
+function PinLock({ onUnlock }) {
+  const [digits, setDigits] = useState(["", "", "", ""]);
+  const [error, setError] = useState(false);
+  const inputsRef = React.useRef([]);
+
+  const handleChange = (i, val) => {
+    if (!/^\d?$/.test(val)) return;
+    const next = [...digits];
+    next[i] = val;
+    setDigits(next);
+    setError(false);
+    if (val && i < 3) {
+      inputsRef.current[i + 1]?.focus();
+    }
+    if (next.every((d) => d) && next.join("") === FAMILY_PIN) {
+      // small delay so the last digit visually fills in before unlocking
+      setTimeout(onUnlock, 150);
+    } else if (next.every((d) => d) && next.join("") !== FAMILY_PIN) {
+      setError(true);
+      setTimeout(() => {
+        setDigits(["", "", "", ""]);
+        inputsRef.current[0]?.focus();
+      }, 600);
+    }
+  };
+
+  const handleKeyDown = (i, e) => {
+    if (e.key === "Backspace" && !digits[i] && i > 0) {
+      inputsRef.current[i - 1]?.focus();
+    }
+  };
+
+  return (
+    <div style={S.pinScreen}>
+      <div style={S.pinCard}>
+        <div style={{ fontSize: 48 }}>🔒</div>
+        <h2 style={S.pinTitle}>Family Chores</h2>
+        <p style={S.pinSub}>Enter the family PIN to continue</p>
+        <div style={S.pinRow}>
+          {digits.map((d, i) => (
+            <input
+              key={i}
+              ref={(el) => (inputsRef.current[i] = el)}
+              style={{ ...S.pinBox, ...(error ? S.pinBoxError : {}) }}
+              type="tel"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={1}
+              value={d}
+              onChange={(e) => handleChange(i, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              autoFocus={i === 0}
+            />
+          ))}
+        </div>
+        {error && <div style={S.pinError}>Wrong PIN — try again</div>}
+      </div>
+    </div>
+  );
+}
+
 function Header() {
   return (
     <div style={S.header}>
@@ -1222,13 +1324,21 @@ function Header() {
 }
 
 function TopBar({ profile, onSwitch }) {
+  const handleLock = () => {
+    if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
+    try { localStorage.removeItem("family_pin_unlock"); } catch {}
+    window.location.reload();
+  };
   return (
     <div style={S.topbar}>
       <div style={S.topbarLeft}>
         <span style={{ fontSize: 22 }}>{profile.emoji}</span>
         <span style={{ fontWeight: 700, color: profile.color }}>{profile.name}</span>
       </div>
-      <button style={S.switchBtn} onClick={onSwitch}>Switch</button>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button style={S.switchBtn} onClick={onSwitch}>Switch</button>
+        <button style={{ ...S.switchBtn, padding: "6px 10px" }} onClick={handleLock} title="Lock this device">🔒</button>
+      </div>
     </div>
   );
 }
@@ -1351,6 +1461,14 @@ const S = {
   kidBonusBox: { background: "linear-gradient(135deg,#fff4e0,#ffe5c0)", border: "2px solid #f0c97a", borderRadius: 14, padding: "12px 14px", marginBottom: 16 },
   kidBonusTitle: { fontWeight: 800, color: "#8a5a1a", marginBottom: 6, fontSize: 14 },
   kidBonusItem: { display: "flex", alignItems: "center", gap: 10, padding: "4px 0", color: "#5a3a0a" },
+  pinScreen: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#2c5f7c,#3d7a9e)", padding: 20 },
+  pinCard: { background: "#fff", borderRadius: 20, padding: "32px 28px", textAlign: "center", maxWidth: 360, width: "100%", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" },
+  pinTitle: { color: "#2c5f7c", margin: "12px 0 4px", fontSize: 22 },
+  pinSub: { color: "#6b7c8c", fontSize: 14, marginBottom: 24 },
+  pinRow: { display: "flex", gap: 10, justifyContent: "center", marginBottom: 12 },
+  pinBox: { width: 50, height: 60, border: "2px solid #c5d4de", borderRadius: 12, fontSize: 28, fontWeight: 700, textAlign: "center", color: "#2c5f7c", background: "#f8fbfd", outline: "none" },
+  pinBoxError: { borderColor: "#c0392b", color: "#c0392b", background: "#fdf0ee" },
+  pinError: { color: "#c0392b", fontSize: 13, fontWeight: 600, marginTop: 8 },
   xpBarOuter: { background: "rgba(255,255,255,0.3)", borderRadius: 20, height: 16, margin: "12px 0 6px", overflow: "hidden" },
   xpBarInner: { background: "#ffd56b", height: "100%", borderRadius: 20, transition: "width 0.4s" },
   xpText: { fontSize: 12, opacity: 0.95 },
