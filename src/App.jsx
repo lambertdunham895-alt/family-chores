@@ -188,6 +188,7 @@ export default function App() {
   });
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
+  const [todayFilter, setTodayFilter] = useState("mine"); // "mine" or "all"
   const [chores, setChores] = useState(DEFAULT_CHORES); // loaded from Supabase, defaults until then
   const [completions, setCompletions] = useState({}); // { "choreId|periodKey": {by, at} }
   const [log, setLog] = useState([]); // permanent completion history: [{by, day, weight}]
@@ -562,10 +563,30 @@ export default function App() {
 
       {view === "today" && (
         <div style={S.section}>
-          <p style={S.todayHint}>Everything due today — daily tasks plus this day's weekly theme.</p>
-          {todayChores.map((c) => (
-            <ChoreRow key={c.id} chore={c} done={isDone(c)} doneBy={doneBy(c)} onToggle={() => toggleChore(c)} />
-          ))}
+          <div style={S.todayFilterRow}>
+            <button
+              style={{ ...S.todayFilterBtn, ...(todayFilter === "mine" ? S.todayFilterBtnActive : {}) }}
+              onClick={() => setTodayFilter("mine")}
+            >
+              Mine
+            </button>
+            <button
+              style={{ ...S.todayFilterBtn, ...(todayFilter === "all" ? S.todayFilterBtnActive : {}) }}
+              onClick={() => setTodayFilter("all")}
+            >
+              All
+            </button>
+          </div>
+          <p style={S.todayHint}>
+            {todayFilter === "mine"
+              ? "Your chores for today, plus anything shared."
+              : "Everything due today across the household."}
+          </p>
+          {todayChores
+            .filter((c) => todayFilter === "all" || c.owner === profile.id || c.owner === "shared")
+            .map((c) => (
+              <ChoreRow key={c.id} chore={c} done={isDone(c)} doneBy={doneBy(c)} onToggle={() => toggleChore(c)} />
+            ))}
         </div>
       )}
 
@@ -1469,6 +1490,9 @@ const S = {
   pinBox: { width: 50, height: 60, border: "2px solid #c5d4de", borderRadius: 12, fontSize: 28, fontWeight: 700, textAlign: "center", color: "#2c5f7c", background: "#f8fbfd", outline: "none" },
   pinBoxError: { borderColor: "#c0392b", color: "#c0392b", background: "#fdf0ee" },
   pinError: { color: "#c0392b", fontSize: 13, fontWeight: 600, marginTop: 8 },
+  todayFilterRow: { display: "flex", gap: 6, marginBottom: 10 },
+  todayFilterBtn: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
+  todayFilterBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
   xpBarOuter: { background: "rgba(255,255,255,0.3)", borderRadius: 20, height: 16, margin: "12px 0 6px", overflow: "hidden" },
   xpBarInner: { background: "#ffd56b", height: "100%", borderRadius: 20, transition: "width 0.4s" },
   xpText: { fontSize: 12, opacity: 0.95 },
