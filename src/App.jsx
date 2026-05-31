@@ -23,9 +23,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
    "kid" flag drives the gamified view + filtered chores.
    ============================================================ */
 const PROFILES = [
-  { id: "adult_a", name: "Adult A", emoji: "🧑", color: "#2c5f7c" },
-  { id: "adult_b", name: "Adult B", emoji: "👩", color: "#3d7a4e" },
-  { id: "kid", name: "Kid", emoji: "🧒", color: "#9c5a2c", isKid: true },
+  { id: "adult_a", name: "Dad", emoji: "👨", color: "#2c5f7c" },
+  { id: "adult_b", name: "Mom", emoji: "👩", color: "#3d7a4e" },
+  { id: "kid", name: "Nolan", emoji: "🧒", color: "#9c5a2c", isKid: true },
 ];
 
 /* ============================================================
@@ -1137,7 +1137,7 @@ function ChoresAdminView({ chores, showToast }) {
           <input style={S.input} type="number" min="1" value={weight} onChange={(e) => setWeight(e.target.value)} />
           <label style={S.label}>Who does it</label>
           <div style={S.segRow}>
-            {[{id:"adult_a",l:"Adult A"},{id:"adult_b",l:"Adult B"},{id:"kid",l:"Kid"},{id:"shared",l:"Shared"}].map((o) => (
+            {[{id:"adult_a",l:"Dad"},{id:"adult_b",l:"Mom"},{id:"kid",l:"Nolan"},{id:"shared",l:"Shared"}].map((o) => (
               <button key={o.id} style={{ ...S.segBtn, ...(owner === o.id ? S.segBtnActive : {}) }} onClick={() => setOwner(o.id)}>{o.l}</button>
             ))}
           </div>
@@ -1189,9 +1189,9 @@ function ChoresAdminView({ chores, showToast }) {
 }
 
 function ownerShortName(id) {
-  if (id === "adult_a") return "Adult A";
-  if (id === "adult_b") return "Adult B";
-  if (id === "kid") return "Kid";
+  if (id === "adult_a") return "Dad";
+  if (id === "adult_b") return "Mom";
+  if (id === "kid") return "Nolan";
   return "Shared";
 }
 
