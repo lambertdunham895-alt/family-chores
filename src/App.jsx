@@ -1,5 +1,25 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import TicTacToe from "./games/TicTacToe.jsx";
+
+/* ============================================================
+   GAMES REGISTRY — add a new game in 2 steps:
+   1. Drop the game file in src/games/YourGame.jsx (default export)
+   2. Import it above, then add an entry to GAMES below
+   ============================================================ */
+const GAMES = [
+  {
+    id: "tictactoe",
+    name: "Explosive Tic-Tac-Toe",
+    description: "Classic tic-tac-toe with bombs!",
+    icon: "💣",
+    color: "#c0392b",
+    component: TicTacToe,
+  },
+  // Add more games here as you build them:
+  // { id: "memory", name: "Memory Match", description: "...", icon: "🧠", color: "#3d7a4e", component: MemoryGame },
+];
+
 
 /* ============================================================
    STEP 1 — PASTE YOUR SUPABASE CREDENTIALS HERE
@@ -186,6 +206,8 @@ export default function App() {
       return Date.now() < expires;
     } catch { return false; }
   });
+  const [section, setSection] = useState("hub"); // "hub" | "chores" | "games"
+  const [activeGame, setActiveGame] = useState(null); // game id when playing
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
   const [todayFilter, setTodayFilter] = useState("mine"); // "mine" or "all"
@@ -395,6 +417,31 @@ export default function App() {
     );
   }
 
+  // ---- Landing hub (chores or games) ----
+  if (section === "hub") {
+    return <LandingHub onChores={() => setSection("chores")} onGames={() => setSection("games")} />;
+  }
+
+  // ---- Games section ----
+  if (section === "games") {
+    if (activeGame) {
+      const game = GAMES.find((g) => g.id === activeGame);
+      if (!game) { setActiveGame(null); return null; }
+      const GameComponent = game.component;
+      return (
+        <div>
+          <div style={S.gameBackBar}>
+            <button style={S.gameBackBtn} onClick={() => setActiveGame(null)}>← Back to games</button>
+          </div>
+          <GameComponent />
+        </div>
+      );
+    }
+    return <GamesHub onBack={() => setSection("hub")} onPick={(id) => setActiveGame(id)} />;
+  }
+
+  // ---- Chores section (everything below this point) ----
+
   if (loading) {
     return (
       <div style={S.center}>
@@ -421,7 +468,13 @@ export default function App() {
               </button>
             ))}
           </div>
-          <div style={{ textAlign: "center", marginTop: 24 }}>
+          <div style={{ textAlign: "center", marginTop: 24, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <button
+              style={{ ...S.switchBtn, fontSize: 12 }}
+              onClick={() => setSection("hub")}
+            >
+              ← Home
+            </button>
             <button
               style={{ ...S.switchBtn, fontSize: 12 }}
               onClick={() => {
@@ -517,6 +570,7 @@ export default function App() {
         bonuses={bonuses}
         onRedeem={redeemReward}
         onSwitch={() => setProfile(null)}
+        onHome={() => { setProfile(null); setSection("hub"); }}
         credsMissing={credsMissing}
         toast={toast}
       />
@@ -547,7 +601,7 @@ export default function App() {
 
   return (
     <div style={S.app}>
-      <TopBar profile={profile} onSwitch={() => setProfile(null)} />
+      <TopBar profile={profile} onSwitch={() => setProfile(null)} onHome={() => { setProfile(null); setSection("hub"); }} />
       {credsMissing && <SetupBanner />}
       <div style={S.tabBar}>
         {tabs.map((t) => (
@@ -778,7 +832,7 @@ function StatsView({ log }) {
 }
 
 /* ---------------- Kid app (Quest mode with tabs) ---------------- */
-function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rewards, redemptions, bonuses, onRedeem, onSwitch, credsMissing, toast }) {
+function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rewards, redemptions, bonuses, onRedeem, onSwitch, onHome, credsMissing, toast }) {
   const [tab, setTab] = useState("quests");
   const rank = getCurrentRank(lifetime);
   const nextRank = getNextRank(lifetime);
@@ -788,7 +842,7 @@ function KidApp({ profile, chores, isDone, onToggleChore, balance, lifetime, rew
 
   return (
     <div style={S.app}>
-      <TopBar profile={profile} onSwitch={onSwitch} />
+      <TopBar profile={profile} onSwitch={onSwitch} onHome={onHome} />
       {credsMissing && <SetupBanner />}
 
       {/* Quest hero card */}
@@ -1335,6 +1389,74 @@ function PinLock({ onUnlock }) {
   );
 }
 
+/* ---------------- Landing hub (first screen after PIN) ---------------- */
+function LandingHub({ onChores, onGames }) {
+  const handleLock = () => {
+    if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
+    try { localStorage.removeItem("family_pin_unlock"); } catch {}
+    window.location.reload();
+  };
+  return (
+    <div style={S.hubScreen}>
+      <div style={S.hubInner}>
+        <h1 style={S.hubTitle}>The Dunham House</h1>
+        <p style={S.hubSub}>Welcome home! Pick what you're doing.</p>
+        <div style={S.hubGrid}>
+          <button style={{ ...S.hubTile, ...S.hubTileChores }} onClick={onChores}>
+            <span style={S.hubIcon}>📋</span>
+            <span style={S.hubTileName}>Chores</span>
+            <span style={S.hubTileSub}>Today's tasks &amp; Quest mode</span>
+          </button>
+          <button style={{ ...S.hubTile, ...S.hubTileGames }} onClick={onGames}>
+            <span style={S.hubIcon}>🎮</span>
+            <span style={S.hubTileName}>Games</span>
+            <span style={S.hubTileSub}>Play together as a family</span>
+          </button>
+        </div>
+        <div style={{ textAlign: "center", marginTop: 28 }}>
+          <button style={{ ...S.switchBtn, fontSize: 12 }} onClick={handleLock}>
+            🔒 Lock this device
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Games hub ---------------- */
+function GamesHub({ onBack, onPick }) {
+  return (
+    <div style={S.app}>
+      <div style={S.gamesHubBar}>
+        <button style={S.gameBackBtn} onClick={onBack}>← Home</button>
+        <h2 style={S.gamesHubTitle}>🎮 Games</h2>
+        <div style={{ width: 80 }} /> {/* spacer to center the title */}
+      </div>
+      {GAMES.length === 0 ? (
+        <div style={S.emptyStats}>
+          <div style={{ fontSize: 36 }}>🎮</div>
+          <p style={{ color: "#6b7c8c", marginTop: 8 }}>No games yet — more coming soon!</p>
+        </div>
+      ) : (
+        <div style={S.gamesGrid}>
+          {GAMES.map((g) => (
+            <button
+              key={g.id}
+              style={{ ...S.gameCard, borderColor: g.color }}
+              onClick={() => onPick(g.id)}
+            >
+              <span style={S.gameCardIcon}>{g.icon}</span>
+              <span style={{ ...S.gameCardName, color: g.color }}>{g.name}</span>
+              <span style={S.gameCardSub}>{g.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function Header() {
   return (
     <div style={S.header}>
@@ -1344,7 +1466,7 @@ function Header() {
   );
 }
 
-function TopBar({ profile, onSwitch }) {
+function TopBar({ profile, onSwitch, onHome }) {
   const handleLock = () => {
     if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
     try { localStorage.removeItem("family_pin_unlock"); } catch {}
@@ -1353,6 +1475,7 @@ function TopBar({ profile, onSwitch }) {
   return (
     <div style={S.topbar}>
       <div style={S.topbarLeft}>
+        {onHome && <button style={S.topbarHome} onClick={onHome} title="Home">🏠</button>}
         <span style={{ fontSize: 22 }}>{profile.emoji}</span>
         <span style={{ fontWeight: 700, color: profile.color }}>{profile.name}</span>
       </div>
@@ -1493,6 +1616,31 @@ const S = {
   todayFilterRow: { display: "flex", gap: 6, marginBottom: 10 },
   todayFilterBtn: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
   todayFilterBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
+  // Landing hub
+  hubScreen: { minHeight: "100vh", background: "linear-gradient(135deg,#f0f6fa 0%,#e3edf3 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
+  hubInner: { maxWidth: 560, width: "100%" },
+  hubTitle: { textAlign: "center", color: "#2c5f7c", fontSize: 32, margin: 0, fontWeight: 800, letterSpacing: 0.5 },
+  hubSub: { textAlign: "center", color: "#6b7c8c", fontSize: 15, marginTop: 6, marginBottom: 28 },
+  hubGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
+  hubTile: { background: "#fff", border: "3px solid", borderRadius: 20, padding: "28px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer", boxShadow: "0 4px 14px rgba(44,95,124,0.10)", transition: "transform 0.15s" },
+  hubTileChores: { borderColor: "#2c5f7c" },
+  hubTileGames: { borderColor: "#7c4adb" },
+  hubIcon: { fontSize: 56, lineHeight: 1 },
+  hubTileName: { fontSize: 20, fontWeight: 800, color: "#1a2b3c", marginTop: 6 },
+  hubTileSub: { fontSize: 12, color: "#6b7c8c", textAlign: "center", lineHeight: 1.3 },
+  // Games hub
+  gamesHubBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "2px solid #e3ebf0", marginBottom: 18 },
+  gamesHubTitle: { color: "#7c4adb", fontSize: 20, margin: 0, fontWeight: 800 },
+  gamesGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  gameCard: { background: "#fff", border: "2.5px solid", borderRadius: 16, padding: "20px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", boxShadow: "0 2px 10px rgba(0,0,0,0.06)" },
+  gameCardIcon: { fontSize: 44 },
+  gameCardName: { fontSize: 14, fontWeight: 700, textAlign: "center", marginTop: 4 },
+  gameCardSub: { fontSize: 11, color: "#6b7c8c", textAlign: "center", lineHeight: 1.3 },
+  // Game back bar (shown above game when playing)
+  gameBackBar: { background: "#1a2b3c", padding: "10px 14px", display: "flex", alignItems: "center" },
+  gameBackBtn: { background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  // Top bar Home button
+  topbarHome: { background: "none", border: "1.5px solid #c5d4de", borderRadius: 6, padding: "4px 8px", fontSize: 14, cursor: "pointer", marginRight: 4 },
   xpBarOuter: { background: "rgba(255,255,255,0.3)", borderRadius: 20, height: 16, margin: "12px 0 6px", overflow: "hidden" },
   xpBarInner: { background: "#ffd56b", height: "100%", borderRadius: 20, transition: "width 0.4s" },
   xpText: { fontSize: 12, opacity: 0.95 },
