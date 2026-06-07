@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import TicTacToe from "./games/TicTacToe.jsx";
+import PegWars from "./games/PegWars.jsx";
 
 /* ============================================================
    GAMES REGISTRY — add a new game in 2 steps:
@@ -15,6 +16,14 @@ const GAMES = [
     icon: "💣",
     color: "#c0392b",
     component: TicTacToe,
+  },
+  {
+    id: "pegwars",
+    name: "Peg Wars",
+    description: "Triangle peg battle with power-ups",
+    icon: "🎯",
+    color: "#7c4adb",
+    component: PegWars,
   },
   // Add more games here as you build them:
   // { id: "memory", name: "Memory Match", description: "...", icon: "🧠", color: "#3d7a4e", component: MemoryGame },
