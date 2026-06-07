@@ -12,7 +12,8 @@ const SUDDEN_DEATH_THRESHOLD = 5;
 const METER_MAX = 10;
 const STORAGE_KEY = "peg_wars_totals_v1";
 
-const PLAYER_COLORS = ["#2c5f7c", "#c0392b"]; // P1 navy, P2 red
+const PLAYER_COLORS = ["#ff5252", "#1abc9c"]; // P1 bright red, P2 teal — matching cartoon style
+const PLAYER_GLOWS = ["#ffcdd2", "#a8e6cf"];   // soft glow versions
 const PLAYER_NAMES = ["Player 1", "Player 2"];
 
 const SPECIAL_EMOJI = { bomb: "💣", rocket: "🚀", multiplier: "✨", freeze: "❄️" };
@@ -517,57 +518,92 @@ export default function PegWars() {
 
   return (
     <div style={S.app}>
+      {/* Floating clouds in background */}
+      <div style={S.cloudsLayer} aria-hidden>
+        <div style={{ ...S.cloud, top: "8%", left: "10%", animationDelay: "0s" }}>☁️</div>
+        <div style={{ ...S.cloud, top: "22%", right: "12%", animationDelay: "-8s", fontSize: 28 }}>☁️</div>
+        <div style={{ ...S.cloud, top: "55%", left: "6%", animationDelay: "-3s", fontSize: 24 }}>☁️</div>
+        <div style={{ ...S.cloud, top: "72%", right: "8%", animationDelay: "-12s" }}>☁️</div>
+      </div>
+
       {/* Header */}
       <div style={S.header}>
-        <div style={S.titleRow}>
-          <h1 style={S.title}>Peg Wars</h1>
-          <div style={S.headerBtns}>
-            <button style={S.iconBtn} onClick={() => setSoundOn((s) => !s)} title="Sound">
-              {soundOn ? "🔊" : "🔇"}
-            </button>
-            <button style={S.iconBtn} onClick={() => setTutorialOpen(true)} title="How to play">❓</button>
-            <button style={S.iconBtn} onClick={nextRound} title="New round">↻</button>
-          </div>
+        <h1 style={S.titleBig}>
+          <span style={{ ...S.titleWord, color: "#fbbf24" }}>PEG</span>{" "}
+          <span style={{ ...S.titleWord, color: "#fff" }}>WARS</span>
+        </h1>
+        <div style={S.subheader}>
+          ROUND <span style={S.roundBadge}>{round}</span> · 2-PLAYER BATTLE
+        </div>
+        <div style={S.headerBtns}>
+          <button style={S.iconBtn} onClick={() => setSoundOn((s) => !s)} title="Sound">
+            {soundOn ? "🔊" : "🔇"}
+          </button>
+          <button style={S.iconBtn} onClick={() => setTutorialOpen(true)} title="How to play">❓</button>
+          <button style={S.iconBtn} onClick={nextRound} title="New round">↻</button>
         </div>
         {suddenDeath && !winner && (
-          <div style={S.suddenDeath}>⚠️ Sudden Death — all scoring is DOUBLED!</div>
+          <div style={S.suddenDeath}>⚠️ SUDDEN DEATH — ALL SCORING DOUBLED!</div>
         )}
       </div>
 
-      {/* Scoreboards */}
+      {/* Scoreboards (gradient cards) */}
       <div style={S.scoreRow}>
-        {[0, 1].map((p) => (
-          <div key={p} style={{ ...S.scoreCard, ...(current === p && !winner ? S.scoreCardActive : {}), borderColor: PLAYER_COLORS[p] }}>
-            <div style={{ ...S.scoreName, color: PLAYER_COLORS[p] }}>{PLAYER_NAMES[p]}</div>
-            <div style={S.scoreNum}>{scores[p]}</div>
-            <div style={S.meterOuter}>
-              <div style={{ ...S.meterInner, width: `${(meters[p] / METER_MAX) * 100}%`, background: PLAYER_COLORS[p] }} />
+        {[0, 1].map((p) => {
+          const isP1 = p === 0;
+          const gradient = isP1
+            ? "linear-gradient(135deg,#ff6b6b 0%,#feca57 100%)"  // red→orange for Player 1
+            : "linear-gradient(135deg,#26d0ce 0%,#1abc9c 100%)"; // teal for Player 2
+          const isActive = current === p && !winner;
+          const meterPct = (meters[p] / METER_MAX) * 100;
+          const powerReady = meters[p] >= METER_MAX;
+          return (
+            <div key={p} style={{
+              ...S.scoreCard,
+              background: gradient,
+              ...(isActive ? S.scoreCardActive : { opacity: 0.85 }),
+            }}>
+              <div style={S.scoreCardTop}>
+                <div style={S.scoreBigLetter}>{isP1 ? "1" : "2"}</div>
+                <div style={S.scoreBigNum}>{scores[p]}</div>
+              </div>
+              <div style={S.scoreCardName}>{PLAYER_NAMES[p]}</div>
+              <button
+                style={{
+                  ...S.scoreCardBtn,
+                  ...(powerReady && isActive ? S.scoreCardBtnReady : {}),
+                  cursor: powerReady && isActive ? "pointer" : "default",
+                }}
+                onClick={() => powerReady && isActive && setPowerPickerOpen(true)}
+                disabled={!powerReady || !isActive}
+              >
+                {powerReady ? "⚡ POWER!" : `⚡ ${meters[p]}/${METER_MAX}`}
+              </button>
+              <div style={S.miniMeter}>
+                <div style={{ ...S.miniMeterFill, width: `${meterPct}%` }} />
+              </div>
+              <div style={S.statusRow}>
+                {pendingMultiplier[p] && <span style={S.statusChip}>✨ x2</span>}
+                {freezeOpponent[1 - p] && <span style={S.statusChip}>❄️</span>}
+                {extraTurn[p] && <span style={S.statusChip}>🔁</span>}
+              </div>
             </div>
-            <div style={S.meterLabel}>
-              {meters[p] >= METER_MAX ? (
-                <button style={{ ...S.powerReadyBtn, background: PLAYER_COLORS[p] }} onClick={() => current === p && setPowerPickerOpen(true)}>
-                  ⚡ POWER READY!
-                </button>
-              ) : (
-                `Power: ${meters[p]}/${METER_MAX}`
-              )}
-            </div>
-            <div style={S.statusRow}>
-              {pendingMultiplier[p] && <span style={S.statusChip}>✨ x2</span>}
-              {freezeOpponent[1 - p] && <span style={S.statusChip}>❄️ Froze {PLAYER_NAMES[1 - p]}</span>}
-              {extraTurn[p] && <span style={S.statusChip}>🔁 Extra turn</span>}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Mode banner */}
-      {mode !== "normal" && (
-        <div style={S.modeBanner}>
-          {mode === "remove" && "⚡ Tap any peg to zap it"}
-          {mode === "blocker" && "🛡️ Tap any empty hole to block it"}
-          {mode === "rocket" && "🚀 Pick any empty hole to launch to!"}
-          {mode !== "rocket" && <button style={S.cancelModeBtn} onClick={() => setMode("normal")}>Cancel</button>}
+      {/* Turn indicator pill */}
+      {!winner && (
+        <div style={S.turnPillWrap}>
+          <div style={S.turnPill}>
+            {mode === "rocket" ? "🚀 ROCKET MODE — PICK A HOLE!" :
+             mode === "remove" ? "⚡ ZAP A PEG" :
+             mode === "blocker" ? "🛡️ PLACE A BLOCKER" :
+             `${PLAYER_NAMES[current].toUpperCase()}'S TURN`}
+          </div>
+          {(mode === "remove" || mode === "blocker") && (
+            <button style={S.cancelModeBtn} onClick={() => setMode("normal")}>Cancel</button>
+          )}
         </div>
       )}
 
@@ -701,48 +737,180 @@ export default function PegWars() {
    STYLES
    ============================================================ */
 const S = {
-  app: { maxWidth: 560, margin: "0 auto", padding: "12px 14px 30px", fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a2b3c", minHeight: "100vh", background: "#f0f6fa" },
-  header: { marginBottom: 12 },
-  titleRow: { display: "flex", alignItems: "center", justifyContent: "space-between" },
-  title: { color: "#2c5f7c", margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: 0.5 },
-  headerBtns: { display: "flex", gap: 6 },
-  iconBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 8, padding: "6px 10px", fontSize: 16, cursor: "pointer" },
-  suddenDeath: { background: "#fff4e0", border: "1.5px solid #f0c97a", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, color: "#8a5a1a", textAlign: "center", marginTop: 8 },
-  scoreRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 },
-  scoreCard: { background: "#fff", border: "2.5px solid", borderRadius: 14, padding: 12, transition: "transform 0.2s", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" },
-  scoreCardActive: { transform: "translateY(-2px)", boxShadow: "0 6px 18px rgba(44,95,124,0.18)" },
-  scoreName: { fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 },
-  scoreNum: { fontSize: 36, fontWeight: 800, color: "#1a2b3c", lineHeight: 1, margin: "4px 0 8px" },
-  meterOuter: { background: "#eef3f6", height: 8, borderRadius: 4, overflow: "hidden" },
-  meterInner: { height: "100%", borderRadius: 4, transition: "width 0.3s" },
-  meterLabel: { fontSize: 11, color: "#6b7c8c", marginTop: 4, textAlign: "center" },
-  powerReadyBtn: { width: "100%", color: "#fff", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 700, cursor: "pointer" },
-  statusRow: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 },
-  statusChip: { fontSize: 10, background: "#eef3f6", color: "#2c5f7c", padding: "2px 6px", borderRadius: 8, fontWeight: 600 },
-  modeBanner: { background: "#fff4e0", border: "1.5px solid #f0c97a", borderRadius: 10, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 14, fontWeight: 700, color: "#8a5a1a" },
-  cancelModeBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" },
-  boardWrap: { width: "100%", maxWidth: 480, margin: "0 auto", marginBottom: 12 },
-  board: { position: "relative", width: "100%", paddingBottom: "100%", background: "linear-gradient(135deg,#dde9f0,#c8d8e0)", borderRadius: 18, overflow: "hidden", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.08)" },
+  app: {
+    maxWidth: 560, margin: "0 auto", padding: "16px 14px 30px",
+    fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a2b3c",
+    minHeight: "100vh",
+    background: "linear-gradient(180deg, #87ceeb 0%, #b6e0f5 50%, #d9f0fc 100%)",
+    position: "relative", overflow: "hidden",
+  },
+  // Floating clouds
+  cloudsLayer: { position: "absolute", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" },
+  cloud: { position: "absolute", fontSize: 32, opacity: 0.85, animation: "cloudfloat 24s linear infinite" },
+
+  // Header
+  header: { position: "relative", zIndex: 2, textAlign: "center", marginBottom: 14 },
+  titleBig: {
+    margin: 0, fontSize: 44, fontWeight: 900, letterSpacing: 1,
+    textShadow: "3px 3px 0 #1a2b3c, 6px 6px 0 rgba(0,0,0,0.15)",
+    fontFamily: "'Segoe UI Black', 'Arial Black', sans-serif",
+    lineHeight: 1.05,
+  },
+  titleWord: { display: "inline-block", WebkitTextStroke: "1px #1a2b3c" },
+  subheader: { fontSize: 13, fontWeight: 800, color: "#1a2b3c", letterSpacing: 1.5, marginTop: 6 },
+  roundBadge: {
+    display: "inline-block", background: "#fbbf24", color: "#1a2b3c",
+    padding: "2px 10px", borderRadius: 20, fontWeight: 900, margin: "0 4px",
+    border: "2px solid #1a2b3c",
+  },
+  headerBtns: { display: "flex", gap: 8, justifyContent: "center", marginTop: 10 },
+  iconBtn: {
+    background: "#fff", border: "2.5px solid #1a2b3c", borderRadius: 10,
+    padding: "6px 12px", fontSize: 16, cursor: "pointer",
+    boxShadow: "0 3px 0 #1a2b3c", fontWeight: 700,
+  },
+  suddenDeath: {
+    background: "#fff3cd", border: "3px solid #1a2b3c", borderRadius: 12,
+    padding: "8px 12px", fontSize: 13, fontWeight: 900, color: "#1a2b3c",
+    textAlign: "center", marginTop: 12,
+    boxShadow: "0 3px 0 #1a2b3c",
+  },
+
+  // Scoreboards (gradient cards)
+  scoreRow: { position: "relative", zIndex: 2, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 },
+  scoreCard: {
+    border: "3px solid #1a2b3c", borderRadius: 16, padding: 12,
+    boxShadow: "0 4px 0 #1a2b3c", transition: "transform 0.15s",
+    position: "relative",
+  },
+  scoreCardActive: { transform: "translateY(-3px)", boxShadow: "0 7px 0 #1a2b3c" },
+  scoreCardTop: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
+  scoreBigLetter: {
+    fontSize: 32, fontWeight: 900, color: "#fff", lineHeight: 1,
+    textShadow: "2px 2px 0 #1a2b3c",
+  },
+  scoreBigNum: {
+    fontSize: 32, fontWeight: 900, color: "#fff", lineHeight: 1,
+    textShadow: "2px 2px 0 #1a2b3c",
+  },
+  scoreCardName: {
+    fontSize: 11, fontWeight: 800, color: "rgba(255,255,255,0.95)",
+    textTransform: "uppercase", letterSpacing: 1, marginTop: 4, marginBottom: 8,
+    textShadow: "1px 1px 0 rgba(0,0,0,0.3)",
+  },
+  scoreCardBtn: {
+    width: "100%", background: "#1a2b3c", color: "#fff",
+    border: "none", borderRadius: 8, padding: "8px 0",
+    fontSize: 13, fontWeight: 900, letterSpacing: 0.5,
+  },
+  scoreCardBtnReady: {
+    background: "#fbbf24", color: "#1a2b3c",
+    animation: "pulseready 1.2s ease-in-out infinite",
+  },
+  miniMeter: { background: "rgba(0,0,0,0.2)", height: 4, borderRadius: 2, overflow: "hidden", marginTop: 6 },
+  miniMeterFill: { height: "100%", background: "#fff", borderRadius: 2, transition: "width 0.3s" },
+  statusRow: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, minHeight: 18 },
+  statusChip: {
+    fontSize: 11, background: "rgba(0,0,0,0.25)", color: "#fff",
+    padding: "2px 6px", borderRadius: 8, fontWeight: 700,
+  },
+
+  // Turn pill
+  turnPillWrap: { position: "relative", zIndex: 2, textAlign: "center", marginBottom: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
+  turnPill: {
+    display: "inline-block",
+    background: "#fff", border: "3px solid #1a2b3c", borderRadius: 30,
+    padding: "8px 22px", fontWeight: 900, fontSize: 14, color: "#1a2b3c",
+    letterSpacing: 1, boxShadow: "0 3px 0 #1a2b3c",
+  },
+  cancelModeBtn: {
+    background: "#fff", border: "2px solid #1a2b3c", borderRadius: 8,
+    padding: "4px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+    boxShadow: "0 2px 0 #1a2b3c",
+  },
+
+  // Board
+  boardWrap: { position: "relative", zIndex: 2, width: "100%", maxWidth: 480, margin: "0 auto", marginBottom: 14 },
+  board: {
+    position: "relative", width: "100%", paddingBottom: "100%",
+    background: "linear-gradient(135deg, #fef5e7 0%, #fde9c1 100%)",
+    borderRadius: 18, overflow: "hidden",
+    border: "4px solid #1a2b3c",
+    boxShadow: "0 5px 0 #1a2b3c, inset 0 2px 8px rgba(0,0,0,0.08)",
+  },
   holeWrap: { position: "absolute", width: "13%", height: "13%", transform: "translate(-50%,-50%)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
-  hole: { width: "100%", height: "100%", borderRadius: "50%", background: "rgba(255,255,255,0.55)", border: "2px solid rgba(44,95,124,0.25)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "inset 0 2px 4px rgba(0,0,0,0.1)" },
-  holeTarget: { background: "rgba(255,213,107,0.6)", border: "3px solid #f0c97a", animation: "none" },
-  specialIcon: { fontSize: 16 },
-  blocker: { fontSize: 18 },
-  peg: { position: "absolute", inset: "12%", borderRadius: "50%", boxShadow: "0 3px 6px rgba(0,0,0,0.3), inset 0 -2px 4px rgba(0,0,0,0.2), inset 0 2px 3px rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.15s" },
-  pegSelected: { transform: "scale(1.15)", boxShadow: "0 0 0 4px #fbbf24, 0 4px 10px rgba(0,0,0,0.4)" },
-  pegSpecial: { fontSize: 14 },
-  floater: { position: "absolute", transform: "translate(-50%,-50%)", fontSize: 16, fontWeight: 800, pointerEvents: "none", animation: "pegfloat 1.1s ease-out forwards", textShadow: "0 1px 3px rgba(0,0,0,0.4)" },
-  footer: { display: "flex", justifyContent: "space-around", alignItems: "center", fontSize: 12, color: "#6b7c8c", padding: "10px 0", background: "#fff", borderRadius: 10, border: "1px solid #e3ebf0" },
-  resetBtn: { background: "none", border: "1px solid #c5d4de", borderRadius: 6, padding: "2px 8px", fontSize: 11, color: "#6b7c8c", cursor: "pointer" },
-  modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 },
-  modal: { background: "#fff", borderRadius: 18, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.3)" },
-  modalTitle: { color: "#2c5f7c", margin: "0 0 16px", fontSize: 22, textAlign: "center" },
+  hole: {
+    width: "100%", height: "100%", borderRadius: "50%",
+    background: "rgba(255,255,255,0.7)",
+    border: "3px solid #1a2b3c",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    boxShadow: "inset 0 2px 4px rgba(0,0,0,0.15)",
+  },
+  holeTarget: {
+    background: "rgba(255,213,107,0.85)",
+    border: "3px solid #1a2b3c",
+    boxShadow: "0 0 0 3px #fbbf24, inset 0 2px 4px rgba(0,0,0,0.15)",
+    animation: "targetpulse 1s ease-in-out infinite",
+  },
+  specialIcon: { fontSize: 18 },
+  blocker: { fontSize: 20 },
+  peg: {
+    position: "absolute", inset: "10%", borderRadius: "50%",
+    border: "2.5px solid #1a2b3c",
+    boxShadow: "0 4px 0 #1a2b3c, inset 0 -3px 5px rgba(0,0,0,0.25), inset 0 3px 4px rgba(255,255,255,0.4)",
+    transition: "transform 0.15s",
+  },
+  pegSelected: {
+    transform: "scale(1.18)",
+    boxShadow: "0 0 0 4px #fbbf24, 0 5px 0 #1a2b3c",
+  },
+  floater: {
+    position: "absolute", transform: "translate(-50%,-50%)",
+    fontSize: 18, fontWeight: 900, pointerEvents: "none",
+    animation: "pegfloat 1.1s ease-out forwards",
+    textShadow: "2px 2px 0 #1a2b3c",
+    WebkitTextStroke: "0.5px #1a2b3c",
+  },
+
+  // Footer
+  footer: {
+    position: "relative", zIndex: 2,
+    display: "flex", justifyContent: "space-around", alignItems: "center",
+    fontSize: 12, color: "#1a2b3c", padding: "10px 6px",
+    background: "#fff", borderRadius: 14, border: "3px solid #1a2b3c",
+    boxShadow: "0 3px 0 #1a2b3c", fontWeight: 700,
+  },
+  resetBtn: {
+    background: "#fff", border: "2px solid #1a2b3c", borderRadius: 6,
+    padding: "3px 10px", fontSize: 11, color: "#1a2b3c", cursor: "pointer",
+    fontWeight: 700,
+  },
+
+  // Modals
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(26,43,60,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 },
+  modal: {
+    background: "#fff", borderRadius: 20, padding: 24,
+    maxWidth: 440, width: "100%",
+    border: "4px solid #1a2b3c",
+    boxShadow: "0 8px 0 #1a2b3c",
+  },
+  modalTitle: { color: "#1a2b3c", margin: "0 0 16px", fontSize: 24, textAlign: "center", fontWeight: 900 },
   powerGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  powerBtn: { background: "#fff", border: "2px solid #c5d4de", borderRadius: 12, padding: "18px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 600 },
-  powerName: { fontSize: 13, color: "#2c5f7c" },
-  modalCloseBtn: { display: "block", width: "100%", marginTop: 16, background: "#2c5f7c", color: "#fff", border: "none", borderRadius: 10, padding: "12px 0", fontSize: 15, fontWeight: 700, cursor: "pointer" },
-  tutorialList: { paddingLeft: 18, lineHeight: 1.6, fontSize: 14, color: "#1a2b3c" },
-  winScores: { display: "flex", justifyContent: "space-around", margin: "16px 0", padding: "12px 0", borderTop: "2px solid #eef3f6", borderBottom: "2px solid #eef3f6" },
+  powerBtn: {
+    background: "#fff", border: "3px solid #1a2b3c", borderRadius: 14,
+    padding: "16px 10px", display: "flex", flexDirection: "column",
+    alignItems: "center", gap: 6, cursor: "pointer", fontWeight: 800,
+    boxShadow: "0 4px 0 #1a2b3c",
+  },
+  powerName: { fontSize: 13, color: "#1a2b3c" },
+  modalCloseBtn: {
+    display: "block", width: "100%", marginTop: 16,
+    background: "#fbbf24", color: "#1a2b3c", border: "3px solid #1a2b3c",
+    borderRadius: 12, padding: "12px 0", fontSize: 16, fontWeight: 900, cursor: "pointer",
+    boxShadow: "0 4px 0 #1a2b3c", letterSpacing: 1,
+  },
+  tutorialList: { paddingLeft: 18, lineHeight: 1.7, fontSize: 14, color: "#1a2b3c" },
+  winScores: { display: "flex", justifyContent: "space-around", margin: "16px 0", padding: "12px 0", borderTop: "3px solid #1a2b3c", borderBottom: "3px solid #1a2b3c" },
 };
 
 // Inject keyframes
@@ -754,8 +922,21 @@ if (typeof document !== "undefined") {
     s.textContent = `
       @keyframes pegfloat {
         0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-        15% { opacity: 1; transform: translate(-50%, -80%) scale(1.1); }
-        100% { opacity: 0; transform: translate(-50%, -180%) scale(1); }
+        15% { opacity: 1; transform: translate(-50%, -90%) scale(1.15); }
+        100% { opacity: 0; transform: translate(-50%, -200%) scale(1); }
+      }
+      @keyframes cloudfloat {
+        0% { transform: translateX(0); }
+        50% { transform: translateX(20px); }
+        100% { transform: translateX(0); }
+      }
+      @keyframes pulseready {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      @keyframes targetpulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
       }
     `;
     document.head.appendChild(s);
