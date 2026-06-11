@@ -58,6 +58,11 @@
     border-radius:6px; background:rgba(18,26,42,.6); border:1px solid var(--gold); color:var(--gold);
     font-size:20px; display:none; align-items:center; justify-content:center; pointer-events:auto;}
   #fsBtn:active{background:rgba(40,54,80,.85);}
+  #sndBtn{position:absolute; top:calc(env(safe-area-inset-top) + 8px);
+    left:calc(env(safe-area-inset-left) + 8px); z-index:12; width:40px; height:40px;
+    border-radius:6px; background:rgba(18,26,42,.6); border:1px solid var(--gold); color:var(--gold);
+    font-size:20px; display:flex; align-items:center; justify-content:center; pointer-events:auto; cursor:pointer;}
+  #sndBtn:active{background:rgba(40,54,80,.85);}
 
   /* rotate-to-landscape prompt (touch + portrait only) */
   #rotate{position:fixed; inset:0; z-index:60; display:none; flex-direction:column;
@@ -85,6 +90,7 @@
     <div class="tbtn" id="bBlock">🛡</div>
   </div>
   <div id="fsBtn">⛶</div>
+  <div id="sndBtn">🔊</div>
 
   <div class="screen" id="loadScreen">
     <div class="crown">♛</div>
@@ -162,6 +168,46 @@ function bindBtn(id,prop){
 bindBtn('bLeft','left'); bindBtn('bRight','right'); bindBtn('bJump','jump'); bindBtn('bAtk','atk'); bindBtn('bBlock','block');
 const isTouch = matchMedia('(pointer:coarse)').matches;
 
+// ---------- audio (synthesized, no files) ----------
+let AC=null, master=null, muted=false;
+function initAudio(){
+  if(AC){ if(AC.state==='suspended') AC.resume(); return; }
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=0.5; master.connect(AC.destination);
+  }catch(e){ AC=null; }
+}
+function tone(freq,dur,type,vol,slideTo,atk){
+  if(!AC||muted)return; const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+  if(slideTo)o.frequency.exponentialRampToValueAtTime(Math.max(40,slideTo),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.3,t+(atk||0.005));
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.02);
+}
+function noise(dur,vol,ftype,ffreq){
+  if(!AC||muted)return; const t=AC.currentTime,n=Math.floor(AC.sampleRate*dur);
+  const buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+  const s=AC.createBufferSource(); s.buffer=buf;
+  const f=AC.createBiquadFilter(); f.type=ftype||'lowpass'; f.frequency.value=ffreq||1200;
+  const g=AC.createGain(); g.gain.setValueAtTime(vol||0.3,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t);
+}
+const SFX={
+  swing(){ tone(440,0.12,'sawtooth',0.16,860); noise(0.09,0.08,'highpass',2200); },
+  hit(){ tone(190,0.10,'square',0.20,90); noise(0.07,0.16,'lowpass',900); },
+  clang(){ tone(950,0.13,'square',0.15,1500); tone(1380,0.17,'triangle',0.11,1900); noise(0.09,0.12,'highpass',3200); },
+  thud(){ tone(120,0.17,'sine',0.30,60); noise(0.12,0.16,'lowpass',520); },
+  skeleDie(){ noise(0.30,0.20,'lowpass',1500); tone(320,0.26,'triangle',0.10,90); },
+  jump(){ tone(300,0.15,'square',0.14,760,0.004); },
+  bossHurt(){ tone(140,0.16,'sawtooth',0.24,80); noise(0.12,0.18,'lowpass',700); },
+  bossDown(){ tone(220,0.8,'sawtooth',0.32,46); noise(0.7,0.24,'lowpass',480); },
+  charge(){ tone(90,0.55,'sawtooth',0.26,190); },
+  windup(){ tone(160,0.30,'triangle',0.18,300,0.05); },
+  win(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.32,'square',0.18),i*140)); },
+  lose(){ [392,330,262,196].forEach((f,i)=>setTimeout(()=>tone(f,0.42,'sawtooth',0.18,f*0.9),i*170)); },
+};
+
 // ---------- game state ----------
 const GOAL = 6200;
 let king, enemies, vfx, cam, particles, state='title', nextSpawn, score, shake;
@@ -189,7 +235,7 @@ function hurtKing(dmg, srcX, heavy, attacker){
   const away = Math.sign(k.x - srcX) || -1;
   if(k.blocking){                      // guard raised: tank most of it + clang + shove attacker
     k.hp -= Math.max(1, Math.round(dmg*0.22));
-    k.inv=340; k.x += away*6; shake=7;
+    k.inv=340; k.x += away*6; shake=7; SFX.clang();
     for(let i=0;i<12;i++) particles.push({x:k.x-away*30,y:k.y-150,vx:(Math.random()-0.5)*8,vy:-Math.random()*5-1,t:0,dur:320});
     if(attacker){
       const eAway = Math.sign(attacker.x - k.x) || 1;
@@ -197,7 +243,7 @@ function hurtKing(dmg, srcX, heavy, attacker){
       if(attacker!==boss){ attacker.st='hurt'; attacker.hurtT=300; }  // skeletons recoil/stagger
     }
   } else {
-    k.hp -= dmg; k.inv = heavy?950:700; k.vy = heavy?-7:-4; k.x += away*(heavy?40:18); shake = heavy?13:8;
+    k.hp -= dmg; k.inv = heavy?950:700; k.vy = heavy?-7:-4; k.x += away*(heavy?40:18); shake = heavy?13:8; SFX.thud();
   }
 }
 
@@ -221,11 +267,11 @@ function updateKing(dt){
     k.walkPhase += Math.abs(mv)*0.18;
   } else if(k.blocking && k.onGround){ k.st='block'; }
   if(k.x<40)k.x=40;
-  if(keys.jump && k.onGround && !k.blocking){ k.vy=-12.5; k.onGround=false; }
+  if(keys.jump && k.onGround && !k.blocking){ k.vy=-12.5; k.onGround=false; SFX.jump(); }
   k.vy += 0.62; k.y += k.vy;
   if(k.y>=GROUND_Y){ k.y=GROUND_Y; k.vy=0; if(!k.onGround){k.onGround=true; k.landT=120;} }
   if(keys.atk && k.st!=='attack' && k.atkT<=0 && k.onGround && !k.blocking){
-    k.st='attack'; k.atkT=330; k.atkFrame=0; k.atkHit=false;
+    k.st='attack'; k.atkT=330; k.atkFrame=0; k.atkHit=false; SFX.swing();
   }
   if(k.st==='attack'){
     k.atkT-=dt;
@@ -242,17 +288,17 @@ function updateKing(dt){
             hitSpark(e.x-k.dir*26, e.y-92); shake=4; e.x += k.dir*10;
             e.blockT=Math.min(e.blockT,140);
           } else {
-            e.hp--; e.hurtT=220; e.st='hurt'; e.x += k.dir*26;
+            e.hp--; e.hurtT=220; e.st='hurt'; e.x += k.dir*26; SFX.hit();
             hitSpark(e.x, e.y-80); shake=6;
-            if(e.hp<=0){ e.dead=true; e.dieT=620; score++; }
+            if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); }
           }
         }
       });
       if(boss && !boss.dead && boss.vuln){
         const bdx=(boss.x-k.x)*k.dir;
-        if(bdx>0 && bdx<160){ boss.hp--; boss.hurtT=170; boss.flash=120;
+        if(bdx>0 && bdx<160){ boss.hp--; boss.hurtT=170; boss.flash=120; SFX.bossHurt();
           hitSpark(k.x+k.dir*120, k.y-150); shake=7;
-          if(boss.hp<=0){ boss.dead=true; boss.dieT=1200; boss.st='down'; } }
+          if(boss.hp<=0){ boss.dead=true; boss.dieT=1200; boss.st='down'; SFX.bossDown(); } }
       }
     }
     if(k.atkT<=0){ k.st = (keys.left||keys.right)?'walk':'idle'; }
@@ -294,7 +340,7 @@ function updateBoss(dt){
   if(b.st==='idle'){
     b.vuln=true; b.cd-=dt;
     if(adist>210) b.x += toK*1.0;
-    if(b.cd<=0){ if(adist<230){ b.st='windup'; b.t=520; } else { b.st='chargeWind'; b.t=620; } }
+    if(b.cd<=0){ if(adist<230){ b.st='windup'; b.t=520; SFX.windup(); } else { b.st='chargeWind'; b.t=620; SFX.charge(); } }
   } else if(b.st==='windup'){
     b.vuln=true; b.t-=dt; if(b.t<=0){ b.st='swing'; b.t=200; b.hitDone=false; }
   } else if(b.st==='swing'){
@@ -513,12 +559,14 @@ function frame(t){
 
 // ---------- screens ----------
 function startGame(){
+  initAudio();
   reset(); state='play';
   document.getElementById('titleScreen').classList.add('hide');
   document.getElementById('endScreen').classList.add('hide');
   if(isTouch) document.getElementById('pad').classList.remove('pad-hide');
 }
 function startBossRetry(){
+  initAudio();
   reset(); enterBoss(); state='play';
   document.getElementById('endScreen').classList.add('hide');
   if(isTouch) document.getElementById('pad').classList.remove('pad-hide');
@@ -527,6 +575,7 @@ function endGame(won, bossLoss){
   if(state!=='play')return;
   state='end';
   retryBoss = (!won && !!bossLoss);
+  (won ? SFX.win : SFX.lose)();
   if(isTouch) document.getElementById('pad').classList.add('pad-hide');
   document.getElementById('endTitle').textContent = won?'THE GATE IS YOURS':'THE KING HAS FALLEN';
   document.getElementById('endTitle').style.color = won?'#c9a24a':'#d6443a';
@@ -539,6 +588,9 @@ function endGame(won, bossLoss){
 }
 document.getElementById('startBtn').onclick=startGame;
 document.getElementById('againBtn').onclick=()=>{ retryBoss ? startBossRetry() : startGame(); };
+document.getElementById('sndBtn').addEventListener('click', function(){
+  initAudio(); muted=!muted; this.textContent = muted ? '🔇' : '🔊';
+});
 
 // ---------- boot ----------
 loadAll().then(()=>{
