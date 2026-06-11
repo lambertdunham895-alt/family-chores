@@ -47,6 +47,9 @@
     width:clamp(66px,15vh,104px); height:clamp(66px,15vh,104px);
     border-color:#e0b84a; font-size:clamp(22px,4.2vh,32px);}
   #bJump{right:calc(env(safe-area-inset-right) + 14px + clamp(66px,15vh,104px) + 12px);}
+  #bBlock{right:calc(env(safe-area-inset-right) + 14px);
+    bottom:calc(env(safe-area-inset-bottom) + clamp(10px,4vh,30px) + clamp(66px,15vh,104px) + 12px);
+    border-color:#6f86a8; font-size:clamp(18px,3.6vh,26px);}
   .pad-hide{display:none!important;}
 
   /* fullscreen button */
@@ -79,6 +82,7 @@
     <div class="tbtn" id="bRight">▶</div>
     <div class="tbtn" id="bJump">⤒</div>
     <div class="tbtn" id="bAtk">⚔</div>
+    <div class="tbtn" id="bBlock">🛡</div>
   </div>
   <div id="fsBtn">⛶</div>
 
@@ -111,7 +115,7 @@
 </div>
 
 <script>
-const ASSETS = {"atk0": "assets/atk0.png", "atk1": "assets/atk1.png", "atk2": "assets/atk2.png", "bCharge": "assets/bCharge.png", "bDown": "assets/bDown.png", "bFollow": "assets/bFollow.png", "bHurt": "assets/bHurt.png", "bIdle": "assets/bIdle.png", "bIdle2": "assets/bIdle2.png", "bSwing": "assets/bSwing.png", "bWalk0": "assets/bWalk0.png", "bWalk1": "assets/bWalk1.png", "bWalk2": "assets/bWalk2.png", "bWalk3": "assets/bWalk3.png", "bWalk4": "assets/bWalk4.png", "bWalk5": "assets/bWalk5.png", "bWalk6": "assets/bWalk6.png", "bWalk7": "assets/bWalk7.png", "bWind": "assets/bWind.png", "bg": "assets/bg.jpg", "ground": "assets/ground.jpg", "idle": "assets/idle.png", "jCrouch": "assets/jCrouch.png", "jFall": "assets/jFall.png", "jRise": "assets/jRise.png", "sBlock": "assets/sBlock.png", "sDeath": "assets/sDeath.png", "sHurt": "assets/sHurt.png", "sIdle": "assets/sIdle.png", "sIdle2": "assets/sIdle2.png", "sRecover": "assets/sRecover.png", "sStrike": "assets/sStrike.png", "sWalk0": "assets/sWalk0.png", "sWalk1": "assets/sWalk1.png", "sWalk2": "assets/sWalk2.png", "sWalk3": "assets/sWalk3.png", "sWalk4": "assets/sWalk4.png", "sWalk5": "assets/sWalk5.png", "sWalk6": "assets/sWalk6.png", "sWalk7": "assets/sWalk7.png", "sWind": "assets/sWind.png", "slash": "assets/slash.png", "title": "assets/title.png", "walk0": "assets/walk0.png", "walk1": "assets/walk1.png", "walk2": "assets/walk2.png", "walk3": "assets/walk3.png", "walk4": "assets/walk4.png", "walk5": "assets/walk5.png", "walk6": "assets/walk6.png", "walk7": "assets/walk7.png"};
+const ASSETS = {"atk0": "assets/atk0.png", "atk1": "assets/atk1.png", "atk2": "assets/atk2.png", "bCharge": "assets/bCharge.png", "bDown": "assets/bDown.png", "bFollow": "assets/bFollow.png", "bHurt": "assets/bHurt.png", "bIdle": "assets/bIdle.png", "bIdle2": "assets/bIdle2.png", "bSwing": "assets/bSwing.png", "bWalk0": "assets/bWalk0.png", "bWalk1": "assets/bWalk1.png", "bWalk2": "assets/bWalk2.png", "bWalk3": "assets/bWalk3.png", "bWalk4": "assets/bWalk4.png", "bWalk5": "assets/bWalk5.png", "bWalk6": "assets/bWalk6.png", "bWalk7": "assets/bWalk7.png", "bWind": "assets/bWind.png", "bg": "assets/bg.jpg", "ground": "assets/ground.jpg", "idle": "assets/idle.png", "jCrouch": "assets/jCrouch.png", "jFall": "assets/jFall.png", "jRise": "assets/jRise.png", "kBlock": "assets/kBlock.png", "sBlock": "assets/sBlock.png", "sDeath": "assets/sDeath.png", "sHurt": "assets/sHurt.png", "sIdle": "assets/sIdle.png", "sIdle2": "assets/sIdle2.png", "sRecover": "assets/sRecover.png", "sStrike": "assets/sStrike.png", "sWalk0": "assets/sWalk0.png", "sWalk1": "assets/sWalk1.png", "sWalk2": "assets/sWalk2.png", "sWalk3": "assets/sWalk3.png", "sWalk4": "assets/sWalk4.png", "sWalk5": "assets/sWalk5.png", "sWalk6": "assets/sWalk6.png", "sWalk7": "assets/sWalk7.png", "sWind": "assets/sWind.png", "slash": "assets/slash.png", "title": "assets/title.png", "walk0": "assets/walk0.png", "walk1": "assets/walk1.png", "walk2": "assets/walk2.png", "walk3": "assets/walk3.png", "walk4": "assets/walk4.png", "walk5": "assets/walk5.png", "walk6": "assets/walk6.png", "walk7": "assets/walk7.png"};
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const W = 960, H = 540, GROUND_Y = 476, DRAW_H = 158, KING_SCALE = 0.74, BOSS_SCALE = 0.85, SKELE_SCALE = 0.66;
 ctx.imageSmoothingEnabled = false;
@@ -133,18 +137,20 @@ function loadAll(){
 // ---------- (enemies now use dedicated skeleton frames) ----------
 
 // ---------- input ----------
-const keys={left:false,right:false,jump:false,atk:false};
+const keys={left:false,right:false,jump:false,atk:false,block:false};
 addEventListener('keydown',e=>{
   if(['ArrowLeft','a','A'].includes(e.key))keys.left=true;
   if(['ArrowRight','d','D'].includes(e.key))keys.right=true;
   if(['ArrowUp','w','W',' '].includes(e.key)){keys.jump=true; e.preventDefault();}
   if(['z','Z','x','X','j','J'].includes(e.key))keys.atk=true;
+  if(['c','C','Shift','ArrowDown','s','S'].includes(e.key))keys.block=true;
 });
 addEventListener('keyup',e=>{
   if(['ArrowLeft','a','A'].includes(e.key))keys.left=false;
   if(['ArrowRight','d','D'].includes(e.key))keys.right=false;
   if(['ArrowUp','w','W',' '].includes(e.key))keys.jump=false;
   if(['z','Z','x','X','j','J'].includes(e.key))keys.atk=false;
+  if(['c','C','Shift','ArrowDown','s','S'].includes(e.key))keys.block=false;
 });
 function bindBtn(id,prop){
   const el=document.getElementById(id);
@@ -153,7 +159,7 @@ function bindBtn(id,prop){
   el.addEventListener('pointerdown',on); el.addEventListener('pointerup',off);
   el.addEventListener('pointercancel',off); el.addEventListener('pointerleave',off);
 }
-bindBtn('bLeft','left'); bindBtn('bRight','right'); bindBtn('bJump','jump'); bindBtn('bAtk','atk');
+bindBtn('bLeft','left'); bindBtn('bRight','right'); bindBtn('bJump','jump'); bindBtn('bAtk','atk'); bindBtn('bBlock','block');
 const isTouch = matchMedia('(pointer:coarse)').matches;
 
 // ---------- game state ----------
@@ -164,7 +170,7 @@ const camBoss = GOAL - W + 240;
 
 function reset(){
   king={x:140,y:GROUND_Y,vy:0,onGround:true,dir:1,hp:100,maxhp:100,
-        st:'idle',walkPhase:0,atkT:0,atkFrame:0,atkHit:false,hurtT:0,inv:0,landT:0};
+        st:'idle',walkPhase:0,atkT:0,atkFrame:0,atkHit:false,hurtT:0,inv:0,landT:0,blocking:false};
   enemies=[]; vfx=[]; particles=[]; score=0; shake=0;
   cam=0; nextSpawn=620; phase='march'; boss=null; bannerT=0;
 }
@@ -178,11 +184,23 @@ function spawnEnemy(x){
 function addSlash(x,y,flip){ vfx.push({x,y,t:0,dur:300,flip}); }
 function hitSpark(x,y){ for(let i=0;i<7;i++)
   particles.push({x,y,vx:(Math.random()-0.5)*6,vy:-Math.random()*5-1,t:0,dur:380}); }
+function hurtKing(dmg, srcX, heavy){
+  const k=king; if(k.inv>0) return;
+  const away = Math.sign(k.x - srcX) || -1;
+  if(k.blocking){                      // guard raised: tank most of it + clang
+    k.hp -= Math.max(1, Math.round(dmg*0.22));
+    k.inv=340; k.x += away*8; shake=5;
+    for(let i=0;i<10;i++) particles.push({x:k.x-away*30,y:k.y-150,vx:(Math.random()-0.5)*7,vy:-Math.random()*4-1,t:0,dur:300});
+  } else {
+    k.hp -= dmg; k.inv = heavy?950:700; k.vy = heavy?-7:-4; k.x += away*(heavy?40:18); shake = heavy?13:8;
+  }
+}
 
 // ---------- king (shared by both phases) ----------
 function updateKing(dt){
   const k=king, speed=3.4, attacking = k.st==='attack';
-  if(!attacking){
+  k.blocking = (keys.block && k.onGround && !attacking);
+  if(!attacking && !k.blocking){
     let mv=0;
     if(keys.left)mv-=1; if(keys.right)mv+=1;
     if(mv!==0){ k.dir=mv; if(k.onGround) k.st='walk'; }
@@ -196,12 +214,12 @@ function updateKing(dt){
       if(boss&&!boss.dead){ const d=nx-boss.x; if(d>0&&d<92) nx=Math.max(nx,boss.x+92); } }
     k.x=nx;
     k.walkPhase += Math.abs(mv)*0.18;
-  }
+  } else if(k.blocking && k.onGround){ k.st='block'; }
   if(k.x<40)k.x=40;
-  if(keys.jump && k.onGround){ k.vy=-12.5; k.onGround=false; }
+  if(keys.jump && k.onGround && !k.blocking){ k.vy=-12.5; k.onGround=false; }
   k.vy += 0.62; k.y += k.vy;
   if(k.y>=GROUND_Y){ k.y=GROUND_Y; k.vy=0; if(!k.onGround){k.onGround=true; k.landT=120;} }
-  if(keys.atk && k.st!=='attack' && k.atkT<=0 && k.onGround){
+  if(keys.atk && k.st!=='attack' && k.atkT<=0 && k.onGround && !k.blocking){
     k.st='attack'; k.atkT=330; k.atkFrame=0; k.atkHit=false;
   }
   if(k.st==='attack'){
@@ -277,7 +295,7 @@ function updateBoss(dt){
   } else if(b.st==='swing'){
     b.t-=dt;
     if(!b.hitDone){ b.hitDone=true;
-      if(adist<185 && k.onGround && k.inv<=0){ k.hp-=18; k.inv=800; k.vy=-5; k.x-=toK*30; shake=10; } }
+      if(adist<185 && k.onGround){ hurtKing(18, b.x); } }
     if(b.t<=0){ b.st='recover'; b.t=440; }
   } else if(b.st==='recover'){
     b.vuln=true; b.t-=dt; if(b.t<=0){ b.st='idle'; b.cd=650+Math.random()*500; }
@@ -288,7 +306,7 @@ function updateBoss(dt){
     b.x += b.chargeVx; b.walkPhase+=0.45;
     if(Math.abs(b.x-k.x)<95){
       const airborne = k.y < GROUND_Y-55;
-      if(!airborne && k.inv<=0){ k.hp-=26; k.inv=950; k.vy=-7; k.x += Math.sign(b.chargeVx)*40; shake=14;
+      if(!airborne){ hurtKing(26, b.x, true);
         b.st='recover'; b.t=520; b.vuln=true; }
     }
     if(b.x<=camBoss+95 || b.x>=camBoss+W-95){
@@ -326,7 +344,7 @@ function update(dt){
       if(e.st==='windup'){ e.aT-=dt; if(e.aT<=0){ e.st='strike'; e.aT=150; e.struck=false; } return; }
       if(e.st==='strike'){ e.aT-=dt;
         if(!e.struck){ e.struck=true;
-          if(dist<82 && king.inv<=0){ king.hp-=10; king.inv=650; king.vy=-3.5; king.x-=Math.sign(dx)*16; shake=7; } }
+          if(dist<82){ hurtKing(10, e.x); } }
         if(e.aT<=0){ e.st='recover'; e.aT=300; } return; }
       if(e.st==='recover'){ e.aT-=dt; if(e.aT<=0){ e.st='walk'; e.cd=500+Math.random()*500; } return; }
 
@@ -414,6 +432,7 @@ function draw(){
   const k=king; let kimg;
   if(k.st==='attack') kimg = [IMG.atk0,IMG.atk1,IMG.atk2][k.atkFrame];
   else if(!k.onGround) kimg = (k.vy<0 ? IMG.jRise : IMG.jFall);
+  else if(k.blocking) kimg = IMG.kBlock;
   else if(k.landT>0) kimg = IMG.jCrouch;
   else if(k.st==='walk') kimg = IMG['walk'+(Math.floor(k.walkPhase)%8)];
   else kimg = IMG.idle;
@@ -519,8 +538,8 @@ document.getElementById('againBtn').onclick=()=>{ retryBoss ? startBossRetry() :
 // ---------- boot ----------
 loadAll().then(()=>{
   document.getElementById('ctrlHint').innerHTML = isTouch
-    ? 'Turn your phone sideways.<br>◀ ▶ move &nbsp; ⤒ jump &nbsp; ⚔ strike'
-    : '← → move &nbsp;·&nbsp; ↑ / Space jump &nbsp;·&nbsp; Z / X strike';
+    ? 'Turn your phone sideways.<br>◀ ▶ move &nbsp; ⤒ jump &nbsp; ⚔ strike &nbsp; 🛡 block'
+    : '← → move &nbsp;·&nbsp; ↑ / Space jump &nbsp;·&nbsp; Z / X strike &nbsp;·&nbsp; C block';
   if(isTouch){
     const fs=document.getElementById('fsBtn');
     fs.style.display='flex';
