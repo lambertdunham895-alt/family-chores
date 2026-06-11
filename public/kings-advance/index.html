@@ -184,13 +184,18 @@ function spawnEnemy(x){
 function addSlash(x,y,flip){ vfx.push({x,y,t:0,dur:300,flip}); }
 function hitSpark(x,y){ for(let i=0;i<7;i++)
   particles.push({x,y,vx:(Math.random()-0.5)*6,vy:-Math.random()*5-1,t:0,dur:380}); }
-function hurtKing(dmg, srcX, heavy){
+function hurtKing(dmg, srcX, heavy, attacker){
   const k=king; if(k.inv>0) return;
   const away = Math.sign(k.x - srcX) || -1;
-  if(k.blocking){                      // guard raised: tank most of it + clang
+  if(k.blocking){                      // guard raised: tank most of it + clang + shove attacker
     k.hp -= Math.max(1, Math.round(dmg*0.22));
-    k.inv=340; k.x += away*8; shake=5;
-    for(let i=0;i<10;i++) particles.push({x:k.x-away*30,y:k.y-150,vx:(Math.random()-0.5)*7,vy:-Math.random()*4-1,t:0,dur:300});
+    k.inv=340; k.x += away*6; shake=7;
+    for(let i=0;i<12;i++) particles.push({x:k.x-away*30,y:k.y-150,vx:(Math.random()-0.5)*8,vy:-Math.random()*5-1,t:0,dur:320});
+    if(attacker){
+      const eAway = Math.sign(attacker.x - k.x) || 1;
+      attacker.x += eAway * (heavy ? 52 : 34);
+      if(attacker!==boss){ attacker.st='hurt'; attacker.hurtT=300; }  // skeletons recoil/stagger
+    }
   } else {
     k.hp -= dmg; k.inv = heavy?950:700; k.vy = heavy?-7:-4; k.x += away*(heavy?40:18); shake = heavy?13:8;
   }
@@ -295,7 +300,7 @@ function updateBoss(dt){
   } else if(b.st==='swing'){
     b.t-=dt;
     if(!b.hitDone){ b.hitDone=true;
-      if(adist<185 && k.onGround){ hurtKing(18, b.x); } }
+      if(adist<185 && k.onGround){ hurtKing(18, b.x, false, b); } }
     if(b.t<=0){ b.st='recover'; b.t=440; }
   } else if(b.st==='recover'){
     b.vuln=true; b.t-=dt; if(b.t<=0){ b.st='idle'; b.cd=650+Math.random()*500; }
@@ -306,7 +311,7 @@ function updateBoss(dt){
     b.x += b.chargeVx; b.walkPhase+=0.45;
     if(Math.abs(b.x-k.x)<95){
       const airborne = k.y < GROUND_Y-55;
-      if(!airborne){ hurtKing(26, b.x, true);
+      if(!airborne){ hurtKing(26, b.x, true, b);
         b.st='recover'; b.t=520; b.vuln=true; }
     }
     if(b.x<=camBoss+95 || b.x>=camBoss+W-95){
@@ -344,7 +349,7 @@ function update(dt){
       if(e.st==='windup'){ e.aT-=dt; if(e.aT<=0){ e.st='strike'; e.aT=150; e.struck=false; } return; }
       if(e.st==='strike'){ e.aT-=dt;
         if(!e.struck){ e.struck=true;
-          if(dist<82){ hurtKing(10, e.x); } }
+          if(dist<82){ hurtKing(10, e.x, false, e); } }
         if(e.aT<=0){ e.st='recover'; e.aT=300; } return; }
       if(e.st==='recover'){ e.aT-=dt; if(e.aT<=0){ e.st='walk'; e.cd=500+Math.random()*500; } return; }
 
