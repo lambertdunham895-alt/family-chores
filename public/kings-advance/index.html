@@ -229,7 +229,7 @@ function pop(x,y,txt,col){ pops.push({x,y,txt,col:col||'#ffd98a',t:0,dur:760}); 
 
 // flying wraith (level 2): hovers at head height -> must JUMP-strike it
 function spawnWraith(x){
-  enemies.push({kind:'wraith', x:x, y:GROUND_Y-96, baseY:GROUND_Y-96, hp:2, st:'float',
+  enemies.push({kind:'wraith', x:x, y:GROUND_Y-88, baseY:GROUND_Y-88, hp:2, st:'float',
                 phase:Math.random()*8, bob:Math.random()*6, cd:600+Math.random()*500,
                 aT:0, struck:false, hurtT:0, faceLeft:true, dead:false, dieT:0});
 }
@@ -306,7 +306,7 @@ function updateKing(dt){
   }
   if(k.diving){   // plunge passes through flying wraiths -> jump-strike
     enemies.forEach(e=>{ if(e.dead || e.kind!=='wraith' || e.hurtT>0) return;
-      if(Math.abs(e.x-k.x)<74 && k.y<GROUND_Y-25 && Math.abs(e.y-k.y)<120){
+      if(Math.abs(e.x-k.x)<95 && k.y<GROUND_Y-25 && Math.abs(e.y-k.y)<120){
         e.hp--; e.st='hurt'; e.hurtT=260; e.x += Math.sign(e.x-k.x||1)*16; SFX.hit(); hitSpark(e.x,e.y-30);
         if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); pop(e.x, e.y-130, '+1'); }
       }
@@ -320,7 +320,7 @@ function updateKing(dt){
       if(k.diving){ k.diving=false; diveSlam(); }   // shockwave on impact
     }
   }
-  if(keys.atk && k.st!=='attack' && k.atkT<=0 && k.onGround && !k.blocking){
+  if(keys.atk && k.st!=='attack' && k.atkT<=0 && !k.blocking && !k.diving && (k.onGround || k.vy<=-4)){
     k.st='attack'; k.atkT=330; k.atkFrame=0; k.atkHit=false; SFX.swing();
   }
   if(k.st==='attack'){
@@ -332,10 +332,11 @@ function updateKing(dt){
       addSlash(k.x + k.dir*70, k.y-78, k.dir<0);
       enemies.forEach(e=>{
         if(e.dead)return;
+        const wr = (e.kind==='wraith');
         const dx=(e.x-k.x)*k.dir;
-        if(dx<=0 || dx>=120) return;
+        if(wr ? (dx<=-25 || dx>=140) : (dx<=0 || dx>=120)) return;
         const airborne = k.y < GROUND_Y-50;
-        const reachable = (e.kind==='wraith') ? airborne : Math.abs(e.y-k.y)<60;
+        const reachable = wr ? (airborne || e.y>GROUND_Y-84) : Math.abs(e.y-k.y)<60;
         if(!reachable) return;
         if(e.kind!=='wraith' && e.st==='block' && e.blockT>0){   // shield turns the blow
           hitSpark(e.x-k.dir*26, e.y-92); shake=4; e.x += k.dir*10;
@@ -425,6 +426,7 @@ function updateWraith(e,dt){
   const dx=king.x-e.x, dist=Math.abs(dx);
   if(e.hurtT>0){ e.st='hurt'; return; }
   if(e.st==='attack'){ e.aT-=dt;
+    e.y = e.baseY + Math.min(52, (460-e.aT)*0.30);   // swoop down while lunging
     if(!e.struck && e.aT<260){ e.struck=true; if(dist<96) hurtKing(8, e.x, false, e); }
     if(e.aT<=0){ e.st='float'; e.cd=900+Math.random()*500; } return;
   }
