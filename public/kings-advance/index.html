@@ -121,9 +121,11 @@
 </div>
 
 <script>
-const ASSETS = {"atk0": "assets/atk0.png", "atk1": "assets/atk1.png", "atk2": "assets/atk2.png", "bCharge": "assets/bCharge.png", "bDown": "assets/bDown.png", "bFollow": "assets/bFollow.png", "bHurt": "assets/bHurt.png", "bIdle": "assets/bIdle.png", "bIdle2": "assets/bIdle2.png", "bSwing": "assets/bSwing.png", "bWalk0": "assets/bWalk0.png", "bWalk1": "assets/bWalk1.png", "bWalk2": "assets/bWalk2.png", "bWalk3": "assets/bWalk3.png", "bWalk4": "assets/bWalk4.png", "bWalk5": "assets/bWalk5.png", "bWalk6": "assets/bWalk6.png", "bWalk7": "assets/bWalk7.png", "bWind": "assets/bWind.png", "bg": "assets/bg.jpg", "ground": "assets/ground.jpg", "idle": "assets/idle.png", "jCrouch": "assets/jCrouch.png", "jFall": "assets/jFall.png", "jRise": "assets/jRise.png", "kBlock": "assets/kBlock.png", "sBlock": "assets/sBlock.png", "sDeath": "assets/sDeath.png", "sHurt": "assets/sHurt.png", "sIdle": "assets/sIdle.png", "sIdle2": "assets/sIdle2.png", "sRecover": "assets/sRecover.png", "sStrike": "assets/sStrike.png", "sWalk0": "assets/sWalk0.png", "sWalk1": "assets/sWalk1.png", "sWalk2": "assets/sWalk2.png", "sWalk3": "assets/sWalk3.png", "sWalk4": "assets/sWalk4.png", "sWalk5": "assets/sWalk5.png", "sWalk6": "assets/sWalk6.png", "sWalk7": "assets/sWalk7.png", "sWind": "assets/sWind.png", "slash": "assets/slash.png", "title": "assets/title.png", "walk0": "assets/walk0.png", "walk1": "assets/walk1.png", "walk2": "assets/walk2.png", "walk3": "assets/walk3.png", "walk4": "assets/walk4.png", "walk5": "assets/walk5.png", "walk6": "assets/walk6.png", "walk7": "assets/walk7.png"};
+const ASSETS = {"atk0": "assets/atk0.png", "atk1": "assets/atk1.png", "atk2": "assets/atk2.png", "bCharge": "assets/bCharge.png", "bDown": "assets/bDown.png", "bFollow": "assets/bFollow.png", "bHurt": "assets/bHurt.png", "bIdle": "assets/bIdle.png", "bIdle2": "assets/bIdle2.png", "bSwing": "assets/bSwing.png", "bWalk0": "assets/bWalk0.png", "bWalk1": "assets/bWalk1.png", "bWalk2": "assets/bWalk2.png", "bWalk3": "assets/bWalk3.png", "bWalk4": "assets/bWalk4.png", "bWalk5": "assets/bWalk5.png", "bWalk6": "assets/bWalk6.png", "bWalk7": "assets/bWalk7.png", "bWind": "assets/bWind.png", "bg": "assets/bg.jpg", "bg2": "assets/bg2.jpg", "ground": "assets/ground.jpg", "ground2": "assets/ground2.jpg", "idle": "assets/idle.png", "jCrouch": "assets/jCrouch.png", "jFall": "assets/jFall.png", "jRise": "assets/jRise.png", "kBlock": "assets/kBlock.png", "sBlock": "assets/sBlock.png", "sDeath": "assets/sDeath.png", "sHurt": "assets/sHurt.png", "sIdle": "assets/sIdle.png", "sIdle2": "assets/sIdle2.png", "sRecover": "assets/sRecover.png", "sStrike": "assets/sStrike.png", "sWalk0": "assets/sWalk0.png", "sWalk1": "assets/sWalk1.png", "sWalk2": "assets/sWalk2.png", "sWalk3": "assets/sWalk3.png", "sWalk4": "assets/sWalk4.png", "sWalk5": "assets/sWalk5.png", "sWalk6": "assets/sWalk6.png", "sWalk7": "assets/sWalk7.png", "sWind": "assets/sWind.png", "slash": "assets/slash.png", "title": "assets/title.png", "wAttack": "assets/wAttack.png", "wDeath": "assets/wDeath.png", "wFloat1": "assets/wFloat1.png", "wFloat2": "assets/wFloat2.png", "walk0": "assets/walk0.png", "walk1": "assets/walk1.png", "walk2": "assets/walk2.png", "walk3": "assets/walk3.png", "walk4": "assets/walk4.png", "walk5": "assets/walk5.png", "walk6": "assets/walk6.png", "walk7": "assets/walk7.png", "wizDown": "assets/wizDown.png", "wizFire": "assets/wizFire.png", "wizHurt": "assets/wizHurt.png", "wizIdle": "assets/wizIdle.png", "wizSummon": "assets/wizSummon.png"};
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
-const W = 960, H = 540, GROUND_Y = 476, DRAW_H = 158, KING_SCALE = 0.74, BOSS_SCALE = 0.85, SKELE_SCALE = 0.66;
+const DPR = Math.min(2, (typeof window!=='undefined' && window.devicePixelRatio) || 1);
+cv.width = 960*DPR; cv.height = 540*DPR;
+const W = 960, H = 540, GROUND_Y = 476, DRAW_H = 158, KING_SCALE = 0.74, BOSS_SCALE = 0.85, SKELE_SCALE = 0.66, WRAITH_SCALE = 0.70, WIZ_SCALE = 0.98;
 ctx.imageSmoothingEnabled = false;
 
 // ---------- asset loading ----------
@@ -212,13 +214,27 @@ const SFX={
 const GOAL = 6200;
 let king, enemies, vfx, cam, particles, state='title', nextSpawn, score, shake;
 let phase='march', boss=null, bannerT=0, bossReached=false, retryBoss=false;
+let level=1, fireballs=[], bannerText='', interT=0;
+let hitStop=0, hurtFlash=0, ambient=[], pops=[];
 const camBoss = GOAL - W + 240;
 
 function reset(){
   king={x:140,y:GROUND_Y,vy:0,onGround:true,dir:1,hp:100,maxhp:100,
-        st:'idle',walkPhase:0,atkT:0,atkFrame:0,atkHit:false,hurtT:0,inv:0,landT:0,blocking:false};
-  enemies=[]; vfx=[]; particles=[]; score=0; shake=0;
-  cam=0; nextSpawn=620; phase='march'; boss=null; bannerT=0;
+        st:'idle',walkPhase:0,atkT:0,atkFrame:0,atkHit:false,hurtT:0,inv:0,landT:0,blocking:false,diving:false};
+  enemies=[]; vfx=[]; particles=[]; fireballs=[]; score=0; shake=0;
+  cam=0; nextSpawn=620; phase='march'; boss=null; bannerT=0; interT=0;
+  hitStop=0; hurtFlash=0; ambient=[]; pops=[];
+}
+function pop(x,y,txt,col){ pops.push({x,y,txt,col:col||'#ffd98a',t:0,dur:760}); }
+
+// flying wraith (level 2): hovers at head height -> must JUMP-strike it
+function spawnWraith(x){
+  enemies.push({kind:'wraith', x:x, y:GROUND_Y-96, baseY:GROUND_Y-96, hp:2, st:'float',
+                phase:Math.random()*8, bob:Math.random()*6, cd:600+Math.random()*500,
+                aT:0, struck:false, hurtT:0, faceLeft:true, dead:false, dieT:0});
+}
+function spawnFireball(x,y,vx){
+  fireballs.push({x:x, y:y, vx:vx, t:0, r:16});
 }
 
 // ---------- helpers ----------
@@ -230,6 +246,21 @@ function spawnEnemy(x){
 function addSlash(x,y,flip){ vfx.push({x,y,t:0,dur:300,flip}); }
 function hitSpark(x,y){ for(let i=0;i<7;i++)
   particles.push({x,y,vx:(Math.random()-0.5)*6,vy:-Math.random()*5-1,t:0,dur:380}); }
+function diveSlam(){
+  shake=13; SFX.thud();
+  for(let i=0;i<22;i++) particles.push({x:king.x+(Math.random()-0.5)*90, y:GROUND_Y-6,
+    vx:(Math.random()-0.5)*11, vy:-Math.random()*7-1, t:0, dur:480});
+  enemies.forEach(e=>{ if(e.dead || e.kind==='wraith')return;
+    if(Math.abs(e.x-king.x)<130){
+      e.hp-=2; e.st='hurt'; e.hurtT=280; e.x += Math.sign(e.x-king.x||1)*42; hitSpark(e.x,e.y-70);
+      if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); pop(e.x, e.y-130, '+1'); }
+    }
+  });
+  if(boss && !boss.dead && boss.vuln && Math.abs(boss.x-king.x)<155){
+    boss.hp--; boss.hurtT=170; boss.flash=120; SFX.bossHurt(); hitStop=45;
+    if(boss.hp<=0){ boss.dead=true; boss.dieT=1200; boss.st='down'; SFX.bossDown(); }
+  }
+}
 function hurtKing(dmg, srcX, heavy, attacker){
   const k=king; if(k.inv>0) return;
   const away = Math.sign(k.x - srcX) || -1;
@@ -244,6 +275,7 @@ function hurtKing(dmg, srcX, heavy, attacker){
     }
   } else {
     k.hp -= dmg; k.inv = heavy?950:700; k.vy = heavy?-7:-4; k.x += away*(heavy?40:18); shake = heavy?13:8; SFX.thud();
+    hurtFlash=260; if(heavy) hitStop=70;
   }
 }
 
@@ -268,8 +300,26 @@ function updateKing(dt){
   } else if(k.blocking && k.onGround){ k.st='block'; }
   if(k.x<40)k.x=40;
   if(keys.jump && k.onGround && !k.blocking){ k.vy=-12.5; k.onGround=false; SFX.jump(); }
+  // aerial DIVE attack: press strike while airborne -> plunge Excalibur down
+  if(keys.atk && !k.onGround && !k.diving && k.st!=='attack' && k.vy>-4){
+    k.diving=true; k.vy=Math.max(k.vy,7); SFX.swing();
+  }
+  if(k.diving){   // plunge passes through flying wraiths -> jump-strike
+    enemies.forEach(e=>{ if(e.dead || e.kind!=='wraith' || e.hurtT>0) return;
+      if(Math.abs(e.x-k.x)<74 && k.y<GROUND_Y-25 && Math.abs(e.y-k.y)<120){
+        e.hp--; e.st='hurt'; e.hurtT=260; e.x += Math.sign(e.x-k.x||1)*16; SFX.hit(); hitSpark(e.x,e.y-30);
+        if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); pop(e.x, e.y-130, '+1'); }
+      }
+    });
+  }
   k.vy += 0.62; k.y += k.vy;
-  if(k.y>=GROUND_Y){ k.y=GROUND_Y; k.vy=0; if(!k.onGround){k.onGround=true; k.landT=120;} }
+  if(k.y>=GROUND_Y){
+    k.y=GROUND_Y; k.vy=0;
+    if(!k.onGround){
+      k.onGround=true; k.landT=120;
+      if(k.diving){ k.diving=false; diveSlam(); }   // shockwave on impact
+    }
+  }
   if(keys.atk && k.st!=='attack' && k.atkT<=0 && k.onGround && !k.blocking){
     k.st='attack'; k.atkT=330; k.atkFrame=0; k.atkHit=false; SFX.swing();
   }
@@ -283,20 +333,22 @@ function updateKing(dt){
       enemies.forEach(e=>{
         if(e.dead)return;
         const dx=(e.x-k.x)*k.dir;
-        if(dx>0 && dx<120 && Math.abs(e.y-k.y)<60){
-          if(e.st==='block' && e.blockT>0){           // shield turns the blow
-            hitSpark(e.x-k.dir*26, e.y-92); shake=4; e.x += k.dir*10;
-            e.blockT=Math.min(e.blockT,140);
-          } else {
-            e.hp--; e.hurtT=220; e.st='hurt'; e.x += k.dir*26; SFX.hit();
-            hitSpark(e.x, e.y-80); shake=6;
-            if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); }
-          }
+        if(dx<=0 || dx>=120) return;
+        const airborne = k.y < GROUND_Y-50;
+        const reachable = (e.kind==='wraith') ? airborne : Math.abs(e.y-k.y)<60;
+        if(!reachable) return;
+        if(e.kind!=='wraith' && e.st==='block' && e.blockT>0){   // shield turns the blow
+          hitSpark(e.x-k.dir*26, e.y-92); shake=4; e.x += k.dir*10;
+          e.blockT=Math.min(e.blockT,140);
+        } else {
+          e.hp--; e.hurtT=220; e.st='hurt'; e.x += k.dir*26; SFX.hit();
+          hitSpark(e.x, e.y-(e.kind==='wraith'?40:80)); shake=6;
+          if(e.hp<=0){ e.dead=true; e.dieT=620; score++; SFX.skeleDie(); pop(e.x, e.y-130, '+1'); }
         }
       });
       if(boss && !boss.dead && boss.vuln){
         const bdx=(boss.x-k.x)*k.dir;
-        if(bdx>0 && bdx<160){ boss.hp--; boss.hurtT=170; boss.flash=120; SFX.bossHurt();
+        if(bdx>0 && bdx<160){ boss.hp--; boss.hurtT=170; boss.flash=120; SFX.bossHurt(); hitStop=45;
           hitSpark(k.x+k.dir*120, k.y-150); shake=7;
           if(boss.hp<=0){ boss.dead=true; boss.dieT=1200; boss.st='down'; SFX.bossDown(); } }
       }
@@ -311,22 +363,89 @@ function updateKing(dt){
 // ---------- boss ----------
 function enterBoss(){
   phase='boss'; bossReached=true;
-  enemies=[]; vfx=[]; particles=[];
+  enemies=[]; vfx=[]; particles=[]; fireballs=[];
   king.x = camBoss+150; king.hp=king.maxhp; king.inv=0; king.st='idle'; king.atkT=0; king.vy=0;
-  cam = camBoss; spawnBoss(); bannerT=2600;
+  cam = camBoss;
+  if(level===2) spawnWizard(); else spawnBoss();
+  bannerText=''; bannerT=2600;
 }
+function startLevel2(){
+  const carry=score; reset(); level=2; score=carry;
+  bannerText='THE CRYPT OF THE DARK WIZARD'; bannerT=3200;
+  if(isTouch) document.getElementById('pad').classList.remove('pad-hide');
+}
+function spawnWizard(){
+  boss={kind:'wizard', x:camBoss+W-220, y:GROUND_Y, hp:24, maxhp:24, dir:-1, st:'enter', t:560,
+        animT:0, enterY:-260, cd:800, vuln:false, hurtT:0, flash:0, dead:false, dieT:0,
+        faceLeft:true, cast:false};
+}
+function updateWizard(dt){
+  const k=king, b=boss;
+  if(k.x < camBoss+60) k.x=camBoss+60;
+  if(k.x > camBoss+W-90) k.x=camBoss+W-90;
+  b.animT+=dt; if(b.flash>0)b.flash-=dt; b.hurtT=Math.max(0,b.hurtT-dt);
+  if(b.dead){ b.dieT-=dt; b.y=GROUND_Y; if(b.dieT<=0) endGame(true); return; }
+  b.y=GROUND_Y;
+  const adist=Math.abs(king.x-b.x), toK=Math.sign(king.x-b.x);
+  b.faceLeft=(king.x<=b.x);
+  if(b.st==='enter'){ b.t-=dt; b.enterY=-260*Math.max(0,b.t/560); b.y=GROUND_Y+b.enterY;
+    if(b.t<=0){ b.y=GROUND_Y; b.st='idle'; b.vuln=true; b.cd=700; } return; }
+  if(b.st==='idle'){ b.vuln=true; b.cd-=dt;
+    if(adist<210) b.x += toK*-0.7;                 // kite away when king closes in
+    else if(adist>430) b.x += toK*0.5;
+    b.x=Math.max(camBoss+W*0.45, Math.min(camBoss+W-110, b.x));
+    if(b.cd<=0){
+      const alive=enemies.filter(e=>!e.dead).length;
+      if(alive<2 && Math.random()<0.6){ b.st='summon'; b.t=640; b.cast=false; SFX.windup(); }
+      else { b.st='fire'; b.t=540; b.cast=false; SFX.charge(); }
+    }
+    return;
+  }
+  if(b.st==='summon'){ b.vuln=true; b.t-=dt;
+    if(b.t<=320 && !b.cast){ b.cast=true;
+      spawnEnemy(b.x-170); spawnEnemy(b.x-110);
+      for(let i=0;i<16;i++) particles.push({x:b.x-140+(Math.random()-0.5)*130,y:GROUND_Y-8,
+        vx:(Math.random()-0.5)*5,vy:-Math.random()*7-2,t:0,dur:540});
+    }
+    if(b.t<=0){ b.st='idle'; b.cd=950+Math.random()*500; } return;
+  }
+  if(b.st==='fire'){ b.vuln=true; b.t-=dt;
+    if(b.t<=280 && !b.cast){ b.cast=true; SFX.swing();
+      const dir=(king.x<=b.x)?-1:1;
+      spawnFireball(b.x+dir*70, GROUND_Y-46, dir*5.4);
+    }
+    if(b.t<=0){ b.st='idle'; b.cd=750+Math.random()*450; } return;
+  }
+}
+function updateWraith(e,dt){
+  if(e.dead){ e.dieT-=dt; return; }
+  e.hurtT=Math.max(0,e.hurtT-dt); e.cd=Math.max(0,e.cd-dt);
+  e.faceLeft=(king.x<=e.x);
+  e.phase+=0.12; e.y=e.baseY+Math.sin(e.phase*0.6)*14;     // hover bob
+  const dx=king.x-e.x, dist=Math.abs(dx);
+  if(e.hurtT>0){ e.st='hurt'; return; }
+  if(e.st==='attack'){ e.aT-=dt;
+    if(!e.struck && e.aT<260){ e.struck=true; if(dist<96) hurtKing(8, e.x, false, e); }
+    if(e.aT<=0){ e.st='float'; e.cd=900+Math.random()*500; } return;
+  }
+  if(dist>70){ e.x += Math.sign(dx)*1.7; e.st='float'; }
+  else if(e.cd<=0){ e.st='attack'; e.aT=460; e.struck=false; }
+  else e.st='float';
+}
+function enterBossMinotaur2(){}
 function spawnBoss(){
-  boss={x:camBoss+W-200, y:GROUND_Y-280, hp:22, maxhp:22, dir:-1, st:'enter', t:560,
+  boss={kind:'minotaur', x:camBoss+W-200, y:GROUND_Y-280, hp:22, maxhp:22, dir:-1, st:'enter', t:560,
         animT:0, cd:1200, vuln:false, hurtT:0, flash:0, dead:false, dieT:0,
         chargeVx:0, walkPhase:0, enterY:-280, hitDone:false, faceLeft:true};
 }
 function updateBoss(dt){
   const k=king, b=boss;
+  if(b && b.kind==='wizard'){ updateWizard(dt); return; }
   if(k.x < camBoss+60) k.x=camBoss+60;
   if(k.x > camBoss+W-90) k.x=camBoss+W-90;
   if(!b) return;
   b.animT+=dt; if(b.flash>0)b.flash-=dt; b.hurtT=Math.max(0,b.hurtT-dt);
-  if(b.dead){ b.dieT-=dt; b.y=GROUND_Y; if(b.dieT<=0) endGame(true); return; }
+  if(b.dead){ b.dieT-=dt; b.y=GROUND_Y; if(b.dieT<=0) startLevel2(); return; }
   const dist=b.x-k.x;
   if(b.st==='enter'){
     b.t-=dt; b.enterY=-280*Math.max(0,b.t/560); b.y=GROUND_Y+b.enterY;
@@ -372,10 +491,12 @@ function update(dt){
   updateKing(dt);
   if(phase==='march'){
     if(king.x > nextSpawn && enemies.filter(e=>!e.dead).length<4){
-      spawnEnemy(king.x + W*0.65 + Math.random()*120);
-      nextSpawn = king.x + 360 + Math.random()*260;
+      if(level===2 && Math.random()<0.45) spawnWraith(king.x + W*0.62 + Math.random()*130);
+      else spawnEnemy(king.x + W*0.65 + Math.random()*120);
+      nextSpawn = king.x + 330 + Math.random()*240;
     }
     enemies.forEach(e=>{
+      if(e.kind==='wraith'){ updateWraith(e,dt); return; }
       if(e.dead){ e.dieT-=dt; return; }
       e.hurtT=Math.max(0,e.hurtT-dt); e.cd=Math.max(0,e.cd-dt); e.blockCd=Math.max(0,e.blockCd-dt);
       e.faceLeft = (king.x <= e.x);
@@ -412,11 +533,29 @@ function update(dt){
     updateBoss(dt);
     cam += (camBoss-cam)*0.12;
   }
+  // fireballs (low projectiles -> JUMP over them)
+  fireballs.forEach(f=>{ f.t+=dt; f.x+=f.vx;
+    if(f.t%40<17) particles.push({x:f.x,y:f.y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,t:0,dur:240,fire:true});
+    const grounded = king.y > GROUND_Y-55;
+    if(grounded && Math.abs(f.x-king.x)<42 && king.inv<=0){ hurtKing(14, f.x); f.hit=true; }
+  });
+  fireballs = fireballs.filter(f=> !f.hit && f.x>cam-60 && f.x<cam+W+60 && f.t<6000);
   vfx.forEach(v=>v.t+=dt); vfx=vfx.filter(v=>v.t<v.dur);
   particles.forEach(p=>{p.t+=dt; p.x+=p.vx; p.y+=p.vy; p.vy+=0.4;});
   particles=particles.filter(p=>p.t<p.dur);
   if(shake>0) shake-=0.6;
   if(bannerT>0) bannerT-=dt;
+  if(hurtFlash>0) hurtFlash-=dt;
+  // ambient atmosphere: embers (castle) / spirit motes (crypt)
+  if(ambient.length<34 && Math.random()<0.10){
+    if(level===2) ambient.push({x:cam+Math.random()*W, y:H*0.2+Math.random()*H*0.65,
+      vx:0.15+Math.random()*0.25, vy:-0.1-Math.random()*0.18, t:0, dur:6500, ph:Math.random()*8});
+    else ambient.push({x:cam+Math.random()*W, y:GROUND_Y-Math.random()*60,
+      vx:(Math.random()-0.5)*0.3, vy:-0.35-Math.random()*0.45, t:0, dur:4200, ph:Math.random()*8});
+  }
+  ambient.forEach(a=>{a.t+=dt; a.x+=a.vx; a.y+=a.vy; a.ph+=0.05;});
+  ambient=ambient.filter(a=>a.t<a.dur && a.x>cam-50 && a.x<cam+W+50);
+  pops.forEach(p=>{p.t+=dt; p.y-=0.55;}); pops=pops.filter(p=>p.t<p.dur);
   if(king.hp<=0){ king.hp=0; endGame(false, phase==='boss'); }
 }
 
@@ -430,21 +569,54 @@ function drawSprite(img, wx, y, dir, scaleH){
   ctx.drawImage(img, -w/2, -h, w, h);
   ctx.restore();
 }
+let vig=null;
+function buildVig(){
+  vig=document.createElement('canvas'); vig.width=W; vig.height=H;
+  const g=vig.getContext('2d');
+  const rg=g.createRadialGradient(W/2,H*0.46,H*0.52, W/2,H*0.5,H*0.85);
+  rg.addColorStop(0,'rgba(0,0,0,0)'); rg.addColorStop(1,'rgba(0,0,0,0.45)');
+  g.fillStyle=rg; g.fillRect(0,0,W,H);
+}
+function drawShadow(wx, wid, al){
+  ctx.fillStyle='rgba(0,0,0,'+al+')';
+  ctx.beginPath(); ctx.ellipse(wx-cam, GROUND_Y+8, wid, wid*0.24, 0, 0, 7); ctx.fill();
+}
 function draw(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
   const sh = shake>0 ? (Math.random()-0.5)*shake : 0;
   ctx.save(); ctx.translate(sh, sh*0.4);
   // backdrop (slow parallax, looped)
-  const bd=IMG.bg, bds=H/bd.height, bw=bd.width*bds;
+  const bd = (level===2 && IMG.bg2) ? IMG.bg2 : IMG.bg, bds=H/bd.height, bw=bd.width*bds;
   let off=(-cam*0.25)%bw; if(off>0)off-=bw;
   for(let x=off; x<W; x+=bw) ctx.drawImage(bd, x, 0, bw, H);
   // ground strip (1x, tiled)
-  const gr=IMG.ground, gw=gr.width, gy=GROUND_Y-26;
+  const gr = (level===2 && IMG.ground2) ? IMG.ground2 : IMG.ground, gw=gr.width, gy=GROUND_Y-26;
   let goff=(-cam)%gw; if(goff>0)goff-=gw;
   for(let x=goff; x<W; x+=gw) ctx.drawImage(gr, x, gy, gw, H-gy);
   ctx.fillStyle='rgba(0,0,0,.28)'; ctx.fillRect(0,GROUND_Y-2,W,H);
 
-  // skeletons (art faces left; flip only if King slips behind them)
+  // ambient: drifting embers / spirit motes
+  ambient.forEach(a=>{
+    const tw=0.35+0.3*Math.sin(a.ph);
+    ctx.globalAlpha=Math.max(0, Math.min(1, tw * (1 - a.t/a.dur)));
+    ctx.fillStyle = level===2 ? '#8ef0b8' : '#ffae5e';
+    const s = level===2 ? 3 : 2;
+    ctx.fillRect(a.x-cam, a.y, s, s);
+  });
+  ctx.globalAlpha=1;
+
+  // enemies
   enemies.forEach(e=>{
+    if(!e.dead) drawShadow(e.x, e.kind==='wraith'?24:30, e.kind==='wraith'?0.18:0.30);
+    if(e.kind==='wraith'){
+      let img;
+      if(e.dead) img=IMG.wDeath;
+      else if(e.st==='attack') img=IMG.wAttack;
+      else img=(Math.floor(e.phase)%2)?IMG.wFloat2:IMG.wFloat1;
+      ctx.globalAlpha = e.dead ? Math.max(0, e.dieT/620) : (e.hurtT>0?0.7:1);
+      drawSprite(img, e.x, e.y, e.faceLeft?1:-1, img.height*WRAITH_SCALE);
+      ctx.globalAlpha=1; return;
+    }
     let img;
     if(e.dead){ img=IMG.sDeath; }
     else if(e.st==='hurt'){ img=IMG.sHurt; }
@@ -460,29 +632,56 @@ function draw(){
 
   // boss (faces left toward king)
   if(boss){
-    const b=boss; let bimg=IMG.bIdle;
-    if(b.dead) bimg=IMG.bDown;
-    else if(b.hurtT>0) bimg=IMG.bHurt;
-    else if(b.st==='windup') bimg=IMG.bWind;
-    else if(b.st==='swing') bimg=IMG.bSwing;
-    else if(b.st==='recover') bimg=IMG.bFollow;
-    else if(b.st==='chargeWind') bimg=IMG.bCharge;
-    else if(b.st==='charge') bimg=IMG['bWalk'+(Math.floor(b.walkPhase)%8)];
-    else if(b.st==='enter') bimg=IMG.bCharge;
-    else bimg = (Math.floor(b.animT/380)%2)?IMG.bIdle2:IMG.bIdle;
-    ctx.globalAlpha = b.dead ? Math.max(0.15, b.dieT/1200) : 1;
-    drawSprite(bimg, b.x, b.y, b.faceLeft?1:-1, bimg.height*BOSS_SCALE);
-    ctx.globalAlpha=1;
-    if(!b.dead && (b.st==='windup'||b.st==='chargeWind') && Math.floor(b.animT/120)%2){
-      ctx.fillStyle='#ff4030'; ctx.font='30px "Press Start 2P",monospace'; ctx.textAlign='center';
-      ctx.fillText('!', b.x-cam, b.y-262); ctx.textAlign='left';
+    const b=boss;
+    if(!b.dead && b.y>=GROUND_Y-4) drawShadow(b.x, b.kind==='wizard'?48:58, 0.34);
+    if(b.kind==='wizard'){
+      let wi=IMG.wizIdle;
+      if(b.dead) wi=IMG.wizDown;
+      else if(b.hurtT>0) wi=IMG.wizHurt;
+      else if(b.st==='summon') wi=IMG.wizSummon;
+      else if(b.st==='fire') wi=IMG.wizFire;
+      ctx.globalAlpha = b.dead ? Math.max(0.12, b.dieT/1200) : 1;
+      drawSprite(wi, b.x, b.y, b.faceLeft?1:-1, wi.height*WIZ_SCALE);
+      ctx.globalAlpha=1;
+      if(!b.dead && (b.st==='summon'||b.st==='fire') && Math.floor(b.animT/120)%2){
+        ctx.fillStyle = b.st==='fire'?'#c050ff':'#79f0a0'; ctx.font='26px "Press Start 2P",monospace'; ctx.textAlign='center';
+        ctx.fillText('!', b.x-cam, b.y-224); ctx.textAlign='left';
+      }
+    } else {
+      let bimg=IMG.bIdle;
+      if(b.dead) bimg=IMG.bDown;
+      else if(b.hurtT>0) bimg=IMG.bHurt;
+      else if(b.st==='windup') bimg=IMG.bWind;
+      else if(b.st==='swing') bimg=IMG.bSwing;
+      else if(b.st==='recover') bimg=IMG.bFollow;
+      else if(b.st==='chargeWind') bimg=IMG.bCharge;
+      else if(b.st==='charge') bimg=IMG['bWalk'+(Math.floor(b.walkPhase)%8)];
+      else if(b.st==='enter') bimg=IMG.bCharge;
+      else bimg = (Math.floor(b.animT/380)%2)?IMG.bIdle2:IMG.bIdle;
+      ctx.globalAlpha = b.dead ? Math.max(0.15, b.dieT/1200) : 1;
+      drawSprite(bimg, b.x, b.y, b.faceLeft?1:-1, bimg.height*BOSS_SCALE);
+      ctx.globalAlpha=1;
+      if(!b.dead && (b.st==='windup'||b.st==='chargeWind') && Math.floor(b.animT/120)%2){
+        ctx.fillStyle='#ff4030'; ctx.font='30px "Press Start 2P",monospace'; ctx.textAlign='center';
+        ctx.fillText('!', b.x-cam, b.y-262); ctx.textAlign='left';
+      }
     }
   }
 
+  // fireballs (glowing purple orbs)
+  fireballs.forEach(f=>{
+    const sx=f.x-cam, r=f.r;
+    const g=ctx.createRadialGradient(sx,f.y,2,sx,f.y,r+7);
+    g.addColorStop(0,'#fff'); g.addColorStop(0.3,'#e483ff'); g.addColorStop(0.7,'#9b27d6'); g.addColorStop(1,'rgba(120,0,180,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,f.y,r+7,0,7); ctx.fill();
+  });
+
   // king
-  const k=king; let kimg;
+  const k=king;
+  { const lift=Math.max(0,(GROUND_Y-k.y)); drawShadow(k.x, Math.max(16, 36-lift*0.09), Math.max(0.10, 0.32-lift*0.0012)); }
+  let kimg;
   if(k.st==='attack') kimg = [IMG.atk0,IMG.atk1,IMG.atk2][k.atkFrame];
-  else if(!k.onGround) kimg = (k.vy<0 ? IMG.jRise : IMG.jFall);
+  else if(!k.onGround) kimg = k.diving ? IMG.atk2 : (k.vy<0 ? IMG.jRise : IMG.jFall);
   else if(k.blocking) kimg = IMG.kBlock;
   else if(k.landT>0) kimg = IMG.jCrouch;
   else if(k.st==='walk') kimg = IMG['walk'+(Math.floor(k.walkPhase)%8)];
@@ -493,7 +692,15 @@ function draw(){
 
   // hit-spark particles
   particles.forEach(p=>{ ctx.globalAlpha=Math.max(0,1-p.t/p.dur);
-    ctx.fillStyle='#ffd98a'; ctx.fillRect(p.x-cam-2, p.y-2, 4, 4); });
+    ctx.fillStyle=p.fire?'#c060ff':'#ffd98a'; ctx.fillRect(p.x-cam-2, p.y-2, 4, 4); });
+  ctx.globalAlpha=1;
+
+  // score popups
+  pops.forEach(p=>{
+    ctx.globalAlpha=Math.max(0,1-p.t/p.dur);
+    ctx.fillStyle=p.col; ctx.font='14px "Press Start 2P",monospace'; ctx.textAlign='center';
+    ctx.fillText(p.txt, p.x-cam, p.y); ctx.textAlign='left';
+  });
   ctx.globalAlpha=1;
 
   // crescent vfx
@@ -516,6 +723,11 @@ function drawHUD(){
   ctx.fillStyle='rgba(8,10,16,.8)'; ctx.fillRect(14,14,250,46);
   ctx.strokeStyle='#c9a24a'; ctx.lineWidth=2; ctx.strokeRect(14,14,250,46);
   ctx.fillStyle='#0a0d12'; ctx.fillRect(22,38,234,14);
+  // vignette + hurt flash (screen-space)
+  if(!vig) buildVig();
+  ctx.drawImage(vig,0,0,W,H);
+  if(hurtFlash>0){ ctx.fillStyle='rgba(214,40,40,'+(0.26*hurtFlash/260)+')'; ctx.fillRect(0,0,W,H); }
+
   ctx.fillStyle='#5fbf57'; ctx.fillRect(22,38,234*Math.max(0,king.hp/king.maxhp),14);
   ctx.fillStyle='#c9a24a'; ctx.font='16px "Press Start 2P",monospace';
   ctx.fillText('KING OF KOD', 24, 32);
@@ -530,21 +742,31 @@ function drawHUD(){
     ctx.textAlign='right'; ctx.fillText('GATE', px+pw-2, py-6); ctx.textAlign='left';
   } else if(boss){
     const bbw=W-260, bbx=130, bby=64;
+    const bname = boss.kind==='wizard' ? 'THE DARK WIZARD' : 'THE GATEKEEPER';
     ctx.fillStyle='rgba(8,10,16,.85)'; ctx.fillRect(bbx-4,bby-22,bbw+8,30);
-    ctx.strokeStyle='#7a2a2a'; ctx.lineWidth=2; ctx.strokeRect(bbx-4,bby-22,bbw+8,30);
+    ctx.strokeStyle = boss.kind==='wizard'?'#5a2a7a':'#7a2a2a'; ctx.lineWidth=2; ctx.strokeRect(bbx-4,bby-22,bbw+8,30);
     ctx.fillStyle='#0a0d12'; ctx.fillRect(bbx,bby-8,bbw,12);
-    ctx.fillStyle='#d6443a'; ctx.fillRect(bbx,bby-8,bbw*Math.max(0,boss.hp/boss.maxhp),12);
+    ctx.fillStyle = boss.kind==='wizard'?'#b24ad6':'#d6443a'; ctx.fillRect(bbx,bby-8,bbw*Math.max(0,boss.hp/boss.maxhp),12);
     ctx.fillStyle='#e7c468'; ctx.font='12px "Press Start 2P",monospace'; ctx.textAlign='center';
-    ctx.fillText('THE GATEKEEPER', W/2, bby-12); ctx.textAlign='left';
+    ctx.fillText(bname, W/2, bby-12); ctx.textAlign='left';
   }
   if(bannerT>0){
-    let a=1; if(bannerT>2200)a=(2600-bannerT)/400; else if(bannerT<400)a=bannerT/400;
-    ctx.globalAlpha=Math.max(0,Math.min(1,a));
+    let a=1; if(bannerT>2200)a=(Math.min(3200,bannerT+0)>2200? (3200-bannerT)/600:1); if(bannerT<400)a=bannerT/400;
+    a=Math.max(0,Math.min(1,a));
+    ctx.globalAlpha=a;
     ctx.fillStyle='#000'; ctx.fillRect(0,H/2-46,W,92);
-    ctx.fillStyle='#d6443a'; ctx.font='30px "Press Start 2P",monospace'; ctx.textAlign='center';
-    ctx.fillText('THE GATEKEEPER', W/2, H/2+2);
-    ctx.fillStyle='#9aa7b8'; ctx.font='15px "Press Start 2P",monospace';
-    ctx.fillText('GUARDIAN OF THE GATE', W/2, H/2+34);
+    ctx.textAlign='center';
+    if(bannerText){
+      ctx.fillStyle='#8ef0b8'; ctx.font='22px "Press Start 2P",monospace';
+      ctx.fillText(bannerText, W/2, H/2+8);
+    } else {
+      const nm = (boss&&boss.kind==='wizard')?'THE DARK WIZARD':'THE GATEKEEPER';
+      const sub= (boss&&boss.kind==='wizard')?'MASTER OF THE CRYPT':'GUARDIAN OF THE GATE';
+      ctx.fillStyle = (boss&&boss.kind==='wizard')?'#b24ad6':'#d6443a'; ctx.font='30px "Press Start 2P",monospace';
+      ctx.fillText(nm, W/2, H/2+2);
+      ctx.fillStyle='#9aa7b8'; ctx.font='15px "Press Start 2P",monospace';
+      ctx.fillText(sub, W/2, H/2+34);
+    }
     ctx.textAlign='left'; ctx.globalAlpha=1;
   }
 }
@@ -553,14 +775,18 @@ function drawHUD(){
 let last=0;
 function frame(t){
   const dt=Math.min(40, t-last||16); last=t;
-  if(state==='play'){ update(dt); draw(); }
+  if(state==='play'){
+    if(hitStop>0){ hitStop-=dt; }       // brief freeze-frame on big hits
+    else update(dt);
+    draw();
+  }
   requestAnimationFrame(frame);
 }
 
 // ---------- screens ----------
 function startGame(){
   initAudio();
-  reset(); state='play';
+  level=1; reset(); state='play';
   document.getElementById('titleScreen').classList.add('hide');
   document.getElementById('endScreen').classList.add('hide');
   if(isTouch) document.getElementById('pad').classList.remove('pad-hide');
@@ -577,12 +803,18 @@ function endGame(won, bossLoss){
   retryBoss = (!won && !!bossLoss);
   (won ? SFX.win : SFX.lose)();
   if(isTouch) document.getElementById('pad').classList.add('pad-hide');
-  document.getElementById('endTitle').textContent = won?'THE GATE IS YOURS':'THE KING HAS FALLEN';
+  const wizBoss = (level===2);
+  document.getElementById('endTitle').textContent = won
+    ? (wizBoss?'THE CRYPT IS CLEANSED':'THE GATE IS YOURS')
+    : 'THE KING HAS FALLEN';
   document.getElementById('endTitle').style.color = won?'#c9a24a':'#d6443a';
+  const bossName = wizBoss?'The Dark Wizard':'The Gatekeeper';
   document.getElementById('endMsg').innerHTML = won
-    ? `The Gatekeeper falls. The castle is yours.<br>Shadows felled: <b>${score}</b>.`
-    : (bossLoss ? `The Gatekeeper still stands. Rally and try again.`
-                : `The shadow host overwhelms you.<br>Shadows felled: <b>${score}</b>.`);
+    ? (wizBoss
+        ? `The Dark Wizard is undone. The dead rest at last.<br>Foes felled: <b>${score}</b>.`
+        : `The Gatekeeper falls. The castle is yours.<br>Shadows felled: <b>${score}</b>.`)
+    : (bossLoss ? `${bossName} still stands. Rally and try again.`
+                : `The undead overwhelm you.<br>Foes felled: <b>${score}</b>.`);
   document.getElementById('againBtn').textContent = retryBoss ? 'RETRY BOSS' : 'MARCH AGAIN';
   document.getElementById('endScreen').classList.remove('hide');
 }
