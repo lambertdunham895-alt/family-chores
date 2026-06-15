@@ -188,15 +188,11 @@ function flipperCollide(f,p,side,held){
   const R=ball.r+FTHICK;
   if(d<R && d>0.0001){ nx/=d; ny/=d;
     ball.x=c.x+nx*R; ball.y=c.y+ny*R;
-    if(Math.abs(f.av)>0.02){               // actively flipping -> impart the surface's true motion
-      reflect(ball,nx,ny,0.30);
-      const r=Math.hypot(c.x-p.x,c.y-p.y);  // how far out along the bat the ball sits
-      // velocity of the contact point as the bat rotates (v = w x r), correct for both sides
-      const sx=-side*Math.sin(f.a)*r*f.av;
-      const sy=      Math.cos(f.a)*r*f.av;
-      const K=0.92;
-      ball.vx+=sx*K; ball.vy+=sy*K;
-      if(ball.vy>-2) ball.vy=-2;            // guarantee a live flip never sends it downward
+    if(Math.abs(f.av)>0.02){               // actively flipping -> clean, predictable launch
+      const r=Math.hypot(c.x-p.x,c.y-p.y);
+      const power = 15 + 16*Math.min(1, r/FLEN);   // stronger the further out the ball sits
+      ball.vx = side*0.42*power;            // gently toward center (left bat -> right, right bat -> left)
+      ball.vy = -0.91*power;                // mostly straight up (angle ~25 deg from vertical, never horizontal)
     } else {                                // resting on the bat -> settle, don't cling/jitter
       reflect(ball,nx,ny,0.05);
       const vn=ball.vx*nx+ball.vy*ny;       // kill tiny outward bounce so it sits calmly
@@ -343,7 +339,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v5', 6, H-8);
+  ctx.fillText('v6', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
