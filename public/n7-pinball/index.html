@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"> 
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -203,10 +203,10 @@ function flipperCollide(f,p,side,held){
       ball.x=c.x+nx*(R+2); ball.y=c.y+ny*(R+2);     // pop off the surface so it can't cling
       ball.vx = side*0.24*power;            // only a hint toward center (~13 deg from vertical)
       ball.vy = -0.97*power;                // strongly up
-    } else {                                // resting on the bat -> settle, don't cling/jitter
-      reflect(ball,nx,ny,0.05);
-      const vn=ball.vx*nx+ball.vy*ny;       // kill tiny outward bounce so it sits calmly
-      if(vn>0 && vn<2.2){ ball.vx-=vn*nx; ball.vy-=vn*ny; }
+    } else {                                // resting/sliding on the bat -> lively, not sticky
+      reflect(ball,nx,ny,0.34);             // real bounce off the bat rubber
+      const vn=ball.vx*nx+ball.vy*ny;       // only cancel the very faintest jitter so it can still settle
+      if(vn>0 && vn<0.6){ ball.vx-=vn*nx; ball.vy-=vn*ny; }
     }
   }
 }
@@ -355,7 +355,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v10', 6, H-8);
+  ctx.fillText('v11', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
