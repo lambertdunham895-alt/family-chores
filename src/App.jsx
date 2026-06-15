@@ -4,6 +4,7 @@ import TicTacToe from "./games/TicTacToe.jsx";
 import PegWars from "./games/PegWars.jsx";
 import ConnectFour from "./games/ConnectFour.jsx";
 import KingsAdvance from "./games/KingsAdvance.jsx";
+import PinballGame from "./games/PinballGame.jsx";
 
 /* ============================================================
    GAMES REGISTRY — add a new game in 2 steps:
@@ -42,6 +43,14 @@ const GAMES = [
     icon: "⚔️",
     color: "#7a2a2a",
     component: KingsAdvance,
+  },
+  {
+    id: "n7pinball",
+    name: "N7 Pinball",
+    description: "Launch the ball, work the relays, don't drain",
+    icon: "🔴",
+    color: "#1a2238",
+    component: PinballGame,
   },
   // Add more games here as you build them:
   // { id: "memory", name: "Memory Match", description: "...", icon: "🧠", color: "#3d7a4e", component: MemoryGame },
