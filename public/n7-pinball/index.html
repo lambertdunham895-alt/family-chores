@@ -94,7 +94,7 @@ function up(id){ const was=pointers.get(id); pointers.delete(id);
   refreshFlips();
 }
 function launch(){ if(state!=='serve'||!ball)return;
-  ball.vy=-(23+plunger*9); ball.vx=-(1.0+plunger*2.2); ball.inLane=true; plunger=0; plungerHeld=false;
+  ball.vy=-(28+plunger*8); ball.vx=-(1.0+plunger*2.0); ball.inLane=true; plunger=0; plungerHeld=false;
   state='play'; SFX.launch(); }
 cv.addEventListener('pointerdown',e=>{e.preventDefault(); initAudio(); down(e.pointerId,e.clientX);});
 cv.addEventListener('pointerup',e=>{e.preventDefault(); up(e.pointerId);});
@@ -225,7 +225,13 @@ function update(){
     if(ball){ ball.x=serve.x; ball.y=serve.y - plunger*22; }
   }
   if(state==='serve'){ updateFlippers(); }   // visual sweep before launch
-  if(state==='play'){ physics(); }
+  if(state==='play'){ physics();
+    // safety net: if the ball lingers low in the plunger lane, auto-relaunch (never get stuck)
+    if(ball && ball.x>laneX-2 && ball.y>620 && ball.vy>-2){
+      ball.stall=(ball.stall||0)+1;
+      if(ball.stall>40){ ball.vy=-30; ball.vx=-1.4; ball.inLane=true; ball.stall=0; SFX.launch(); }
+    } else if(ball){ ball.stall=0; }
+  }
   if(shake>0)shake-=0.7;
   if(flashT>0)flashT-=16;
   bumpers.forEach(bp=>{ if(bp.flash>0)bp.flash-=0.08; });
@@ -340,7 +346,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v7', 6, H-8);
+  ctx.fillText('v8', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
