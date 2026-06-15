@@ -35,7 +35,7 @@ seg(laneX,210,laneX,690);  seg(laneX,690,410,852,1.05);
 seg(W-b,170,W-b,H-24);  seg(laneX,H-24,W-b,H-24);
 const bumpers=[{x:W*0.34,y:330,r:46},{x:W*0.66,y:330,r:46},{x:W*0.5,y:452,r:48}];
 bumpers.forEach(bp=>{bp.flash=0;bp.img=null;});
-const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=130, REST=0.30, SWING=0.62, FTHICK=11;
+const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=134, REST=0.30, SWING=0.62, FTHICK=13;
 const serve={x:521,y:H-70};
 
 // ---------- assets ----------
@@ -133,7 +133,7 @@ function flipStep(f,target){            // advance one substep; sets f.av to per
 function physics(){
   if(!ball)return;
   const SUB=SUBSTEPS;
-  ball.vy+=0.55;                                   // gravity (px/frame)
+  ball.vy+=0.50;                                   // gravity (px/frame)
   { const sp=Math.hypot(ball.vx,ball.vy), MAX=34;  // cap (px/frame); MAX/SUB < r so no tunneling
     if(sp>MAX){ ball.vx*=MAX/sp; ball.vy*=MAX/sp; } }
   for(let s=0;s<SUB;s++){
@@ -338,6 +338,8 @@ function draw(){
   ctx.restore();
   if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
+  ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
+  ctx.fillText('v4', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
