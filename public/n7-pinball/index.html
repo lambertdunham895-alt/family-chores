@@ -39,7 +39,7 @@ const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=120, REST=0.30, SWING=0.62, FTHIC
 const serve={x:521,y:H-70};
 
 // ---------- assets ----------
-const IMG={}; let loaded=0; const NEED=['ball','bumper1','bumper2','bumper3','geth','normandy'];
+const IMG={}; let loaded=0; const NEED=['ball','bumper1','bumper2','bumper3','table'];
 NEED.forEach(n=>{const im=new Image(); im.onload=()=>{loaded++;}; im.src='assets/'+n+'.png'; IMG[n]=im;});
 function ready(){return loaded>=NEED.length;}
 
@@ -230,33 +230,23 @@ function buildHex(){
 function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 
 function drawTable(){
-  // playfield base
-  const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#0c1426'); g.addColorStop(0.5,'#0a0f1e'); g.addColorStop(1,'#070a14');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  if(hexPat){ ctx.fillStyle=hexPat; ctx.fillRect(0,0,W,H); }
+  // table art (cover-fit), with a subtle darken so play elements pop
+  const t=IMG.table;
+  if(t&&t.complete){
+    const s=Math.max(W/t.width,H/t.height), rw=t.width*s, rh=t.height*s;
+    ctx.drawImage(t,(W-rw)/2,(H-rh)/2,rw,rh);
+  } else { ctx.fillStyle='#0a0f1e'; ctx.fillRect(0,0,W,H); }
+  ctx.fillStyle='rgba(5,8,16,0.30)'; ctx.fillRect(0,0,W,H);
+  // dark strip behind HUD for readability
+  const hg=ctx.createLinearGradient(0,0,0,70); hg.addColorStop(0,'rgba(3,5,10,0.7)'); hg.addColorStop(1,'rgba(3,5,10,0)');
+  ctx.fillStyle=hg; ctx.fillRect(0,0,W,70);
 
-  // faint center logo glow + decals
-  ctx.globalAlpha=0.10;
-  if(IMG.geth&&IMG.geth.complete){ const iw=230, ih=iw*IMG.geth.height/IMG.geth.width; ctx.drawImage(IMG.geth,W/2-iw/2,150,iw,ih); }
-  ctx.globalAlpha=0.12;
-  if(IMG.normandy&&IMG.normandy.complete){ const iw=190, ih=iw*IMG.normandy.height/IMG.normandy.width; ctx.drawImage(IMG.normandy,W/2-iw/2,560,iw,ih); }
-  ctx.globalAlpha=1;
-
-  // N7 stripe accents (top corners)
-  ctx.fillStyle='#c1272d'; ctx.fillRect(b,176,46,7); ctx.fillStyle='#e8e8e8'; ctx.font='bold 17px "Trebuchet MS"';
-  ctx.fillText('N7',b+4,200);
-  ctx.textAlign='right'; ctx.fillStyle='#2f6fd6'; ctx.fillText('CITADEL',W-b-4,200); ctx.textAlign='left';
-
-  // walls (neon)
+  // physics walls as a subtle neon guide (thin, so the art shows through)
   ctx.lineCap='round';
-  ctx.strokeStyle='rgba(60,120,220,0.25)'; ctx.lineWidth=9;
+  ctx.strokeStyle='rgba(70,150,255,0.16)'; ctx.lineWidth=6;
   walls.forEach(wl=>{ctx.beginPath();ctx.moveTo(wl.x1,wl.y1);ctx.lineTo(wl.x2,wl.y2);ctx.stroke();});
-  ctx.strokeStyle='#5aa0ff'; ctx.lineWidth=3;
+  ctx.strokeStyle='rgba(120,190,255,0.55)'; ctx.lineWidth=2;
   walls.forEach(wl=>{ctx.beginPath();ctx.moveTo(wl.x1,wl.y1);ctx.lineTo(wl.x2,wl.y2);ctx.stroke();});
-
-  // plunger lane tint
-  ctx.fillStyle='rgba(193,39,45,0.06)'; ctx.fillRect(laneX+2,210,W-b-laneX-2,H-24-210);
 }
 function drawBumpers(){
   bumpers.forEach((bp,i)=>{
