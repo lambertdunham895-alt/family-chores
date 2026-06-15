@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"> 
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
@@ -41,7 +41,7 @@ const bumpers=[
   {x:W*0.81, y:648, r:30, art:'bumper2'},  // small jet, lower-right
 ];
 bumpers.forEach(bp=>{bp.flash=0;});
-const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=131, REST=0.30, SWING=0.62, FTHICK=10;
+const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=112, REST=0.30, SWING=0.62, FTHICK=8;
 const serve={x:521,y:H-70};
 
 // ---------- assets ----------
@@ -150,6 +150,9 @@ function physics(){
       if(ball.x<laneX+ball.r && ball.y>205){ ball.x=laneX+ball.r; if(ball.vx<0)ball.vx*=-0.3; }
       if(ball.x>W-b-ball.r){ ball.x=W-b-ball.r; ball.vx*=-0.4; }
       if(ball.y<205) ball.inLane=false;
+    } else if(ball.x>laneX-ball.r && ball.y<232 && ball.vx>=0){
+      // one-way gate: once in play, the ball can't drop back into the plunger lane
+      ball.x=laneX-ball.r; ball.vx=-Math.abs(ball.vx)*0.4-0.6;
     }
 
     // walls
@@ -352,7 +355,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v9', 6, H-8);
+  ctx.fillText('v10', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
