@@ -39,9 +39,10 @@ const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=120, REST=0.30, SWING=0.62, FTHIC
 const serve={x:521,y:H-70};
 
 // ---------- assets ----------
-const IMG={}; let loaded=0; const NEED=['ball','bumper1','bumper2','bumper3','table'];
-NEED.forEach(n=>{const im=new Image(); im.onload=()=>{loaded++;}; im.src='assets/'+n+'.png'; IMG[n]=im;});
-function ready(){return loaded>=NEED.length;}
+const FILES={ball:'ball.png',bumper1:'bumper1.png',bumper2:'bumper2.png',bumper3:'bumper3.png',table:'table.jpg'};
+const IMG={}; let loaded=0; const KEYS=Object.keys(FILES); const loadStart=Date.now();
+KEYS.forEach(k=>{const im=new Image(); im.onload=()=>{loaded++;}; im.onerror=()=>{loaded++;}; im.src='assets/'+FILES[k]; IMG[k]=im;});
+function ready(){ return loaded>=KEYS.length || (Date.now()-loadStart)>6000; }
 
 // ---------- audio ----------
 let AC=null;
