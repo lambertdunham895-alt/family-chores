@@ -35,7 +35,7 @@ seg(laneX,210,laneX,690);  seg(laneX,690,410,852,1.05);
 seg(W-b,170,W-b,H-24);  seg(laneX,H-24,W-b,H-24);
 const bumpers=[{x:W*0.34,y:330,r:46},{x:W*0.66,y:330,r:46},{x:W*0.5,y:452,r:48}];
 bumpers.forEach(bp=>{bp.flash=0;bp.img=null;});
-const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=120, REST=0.30, SWING=0.62, FTHICK=11;
+const LP={x:150,y:852}, RP={x:410,y:852}, FLEN=130, REST=0.30, SWING=0.62, FTHICK=11;
 const serve={x:521,y:H-70};
 
 // ---------- assets ----------
@@ -123,10 +123,16 @@ function reflect(ballv,nx,ny,rest){
   ballv.vx-=(1+rest)*d*nx; ballv.vy-=(1+rest)*d*ny;
 }
 function flipTip(f,p,side){ return {x:p.x+side*FLEN*Math.cos(f.a), y:p.y+FLEN*Math.sin(f.a)}; }
+const SUBSTEPS=8, FSTEP=0.42;
+function flipStep(f,target){            // advance one substep; sets f.av to per-frame rate for the kick
+  const inc=FSTEP/SUBSTEPS;
+  if(Math.abs(f.a-target)<=inc){ f.a=target; f.av=0; }
+  else { const dir=target<f.a?-1:1; f.a+=dir*inc; f.av=dir*FSTEP; }
+}
 
 function physics(){
   if(!ball)return;
-  const SUB=8;
+  const SUB=SUBSTEPS;
   ball.vy+=0.55;                                   // gravity (px/frame)
   { const sp=Math.hypot(ball.vx,ball.vy), MAX=34;  // cap (px/frame); MAX/SUB < r so no tunneling
     if(sp>MAX){ ball.vx*=MAX/sp; ball.vy*=MAX/sp; } }
@@ -163,7 +169,9 @@ function physics(){
         addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
       }
     }
-    // flippers (as fat capsules; impart angular speed)
+    // flippers swept in small steps so a fast swing can't pass through the ball
+    flipStep(lFlip, leftHeld?REST-SWING:REST);
+    flipStep(rFlip, rightHeld?REST-SWING:REST);
     flipperCollide(lFlip,LP,1,leftHeld);
     flipperCollide(rFlip,RP,-1,rightHeld);
 
@@ -215,7 +223,7 @@ function update(){
     if(plungerHeld) plunger=Math.min(1,plunger+0.018);
     if(ball){ ball.x=serve.x; ball.y=serve.y - plunger*22; }
   }
-  if(state==='play'||state==='serve'){ updateFlippers(); }
+  if(state==='serve'){ updateFlippers(); }   // visual sweep before launch
   if(state==='play'){ physics(); }
   if(shake>0)shake-=0.7;
   if(flashT>0)flashT-=16;
