@@ -1,219 +1,163 @@
-<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Briar Hollow — Chapter 1</title>
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Briar Hollow</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
-  html,body{height:100%;background:#0a0e14;overflow:hidden;font-family:"Trebuchet MS",system-ui,sans-serif;color:#eef}
-  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#1a2a1e}
-  .ctl{position:fixed;z-index:5;opacity:.85}
-  #dpad{left:14px;bottom:22px;width:150px;height:150px}
-  #abtn{right:24px;bottom:54px;width:84px;height:84px;border-radius:50%;
-        background:radial-gradient(circle at 35% 30%,#ffd86b,#c9962f);border:3px solid #fff3cf;
-        display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:30px;color:#3a2a08}
-  .dbtn{position:absolute;width:50px;height:50px;background:rgba(40,55,70,.9);border:2px solid #6da;border-radius:10px}
-  #du{left:50px;top:0}#dd{left:50px;top:100px}#dl{left:0;top:50px}#dr{left:100px;top:50px}
-  #safe{position:fixed;left:0;right:0;bottom:0;height:env(safe-area-inset-bottom)}
-</style></head>
-<body>
+html,body{margin:0;height:100%;background:#0a0f16;overflow:hidden;touch-action:none;font-family:"Trebuchet MS",sans-serif;}
+#cv{display:block;width:100vw;height:100vh;}
+.ctl{position:fixed;background:rgba(20,30,46,0.5);border:2px solid rgba(127,217,192,0.4);border-radius:12px;
+  color:#cfe;display:flex;align-items:center;justify-content:center;font-size:22px;user-select:none;touch-action:none;}
+#du{left:74px;bottom:150px;width:60px;height:60px;} #dd{left:74px;bottom:30px;width:60px;height:60px;}
+#dl{left:14px;bottom:90px;width:60px;height:60px;} #dr{left:134px;bottom:90px;width:60px;height:60px;}
+#abtn{right:34px;bottom:60px;width:88px;height:88px;border-radius:50%;font-weight:bold;font-size:28px;
+  background:rgba(60,30,30,0.55);border-color:rgba(255,150,120,0.6);color:#ffd;}
+</style></head><body>
 <canvas id="cv"></canvas>
-<div id="dpad" class="ctl">
-  <div class="dbtn" id="du"></div><div class="dbtn" id="dd"></div>
-  <div class="dbtn" id="dl"></div><div class="dbtn" id="dr"></div>
-</div>
+<div id="du" class="ctl">▲</div><div id="dd" class="ctl">▼</div>
+<div id="dl" class="ctl">◀</div><div id="dr" class="ctl">▶</div>
 <div id="abtn" class="ctl">A</div>
 <script>
-const MAP=[
-[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,10,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,5,5,5,5,0,0,0,0,0,8,5,5,5,5,5,0,0,0,0,0,5,5,5,5,0,0,2],
-[2,0,0,4,4,4,4,0,0,0,0,0,7,7,7,7,7,7,0,0,0,0,0,4,4,4,4,0,0,2],
-[2,0,0,4,4,6,4,0,0,0,0,0,7,7,7,7,7,7,0,0,0,0,0,4,4,6,4,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,7,7,6,6,7,7,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,0,0,11,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,11,0,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,0,0,0,2,2,0,0,0,0,0,11,1,1,11,0,0,0,0,0,2,0,0,0,0,0,0,2],
-[2,0,0,0,0,0,0,0,0,9,9,0,0,0,1,1,0,0,0,9,9,0,0,0,2,0,0,0,0,2],
-[2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2],
-[2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2],
-[2,0,0,0,0,0,2,0,0,9,9,0,0,0,1,1,0,0,0,9,9,0,0,0,0,0,0,0,0,2],
-[2,0,0,3,3,3,3,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,3,3,3,3,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,5,5,5,5,0,0,2],
-[2,0,0,3,3,3,3,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,4,4,4,4,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,11,0,0,0,1,1,0,0,0,11,0,0,0,4,4,6,4,0,0,2],
-[2,0,0,0,0,0,0,0,2,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,0,0,10,1,0,0,0,0,0,2,0,0,0,0,0,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,2],
-[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
-];
-const NPCS=[{"x": 4, "y": 6, "name": "Father", "color": "#9c5a2c", "dir": "down", "lines": ["Alden! There's work at the forge.", "...Those dreams again? You look pale, son."]}, {"x": 6, "y": 5, "name": "Mother", "color": "#b06a8a", "dir": "down", "lines": ["You barely slept. The same dream?", "Promise me you'll be careful, my boy."]}, {"x": 24, "y": 6, "name": "Shopkeeper", "color": "#3d7a8a", "dir": "down", "lines": ["Potions, rope, supplies.", "Coin's tight since the harvest. Hard times."]}, {"x": 17, "y": 11, "name": "Villager", "color": "#6a6ab0", "dir": "down", "lines": ["Did you see it? That blue star!", "Crashed beyond the Frostfangs, they say."]}, {"x": 12, "y": 12, "name": "Old Maelis", "color": "#7a7a7a", "dir": "down", "lines": ["The old prophecy stirs, child.", "'When the Lion sleeps, darkness rises...'"]}];
-const SIGNS={"18,14": "BRIAR HOLLOW  -  small village, large hearts.", "1,15": "FROSTFANG PASS, north. Beyond lies the fallen star. (Your journey continues next chapter.)"};
-const MAP_W=30,MAP_H=22;
-
+const TS=44,MW=30,MH=27,WW=MW*TS,WH=MH*TS;
+const G=[[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]];
+const NPCS=[{"x": 20, "y": 9, "name": "Father", "color": "#9c5a2c"}, {"x": 6, "y": 16, "name": "Mother", "color": "#b06a8a"}, {"x": 17, "y": 13, "name": "Shopkeeper", "color": "#3d7a8a"}, {"x": 13, "y": 10, "name": "Villager", "color": "#6a6ab0"}, {"x": 21, "y": 11, "name": "Old Maelis", "color": "#7a7a7a"}];
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
-const DPR=Math.min(2,window.devicePixelRatio||1);
-let VW=0,VH=0;
-function resize(){ VW=window.innerWidth; VH=window.innerHeight; cv.width=VW*DPR; cv.height=VH*DPR; }
-window.addEventListener('resize',resize); resize();
+const DPR=Math.min(2,window.devicePixelRatio||1); let VW=0,VH=0;
+function resize(){VW=innerWidth;VH=innerHeight;cv.width=VW*DPR;cv.height=VH*DPR;}
+addEventListener('resize',resize); resize();
+const bg=new Image(); let bgReady=false; bg.onload=()=>bgReady=true; bg.src='assets/bg.jpg';
 
-const TS=44;                         // tile size on screen (px)
-const mapPxW=MAP_W*TS, mapPxH=MAP_H*TS;
-const SOLID=new Set([2,3,4,5,7,8,9,10]);   // tree,water,wall,roof,church,bell,stall,sign
-const PAL={0:'#4f9d5b',1:'#caa86a',2:'#2f6b3a',3:'#3a7bd5',4:'#9aa3ad',5:'#8a4b3a',
-          6:'#6b4a2a',7:'#c9c2b0',8:'#d8c468',9:'#b06a3a',10:'#caa86a',11:'#4f9d5b'};
-let state='title', tt=0;
-const player={x:14*TS+TS/2, y:9*TS+TS/2, w:24,h:20, dir:'down', moving:false, step:0, name:'ALDEN'};
+let state='title';let tt=0;
+const player={x:11*TS+TS/2,y:13*TS+TS/2,w:22,h:14,dir:'down',moving:false,step:0,name:'ALDEN'};
 const keys={up:0,down:0,left:0,right:0,act:0};
-let dialogue=null, dlgIdx=0, dlgName='', actLatch=false;
+let dialogue=null,dlgIdx=0,dlgName='',actLatch=false,quest=0,hasBlade=false,dlgAfter=null;
+const OBJ=["Talk to Mother - she barely slept for worry.","Seek Old Maelis about the prophecy.",
+ "Take the blade Father forged, at the forge.","Leave through the north gate. Follow the star.",""];
 
-function tileAt(px,py){ const tx=Math.floor(px/TS), ty=Math.floor(py/TS);
-  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return 2; return MAP[ty][tx]; }
-function solidPix(px,py){ return SOLID.has(tileAt(px,py)); }
-function boxFree(cx,cy){ const hw=player.w/2,hh=player.h/2;
-  return !(solidPix(cx-hw,cy-hh)||solidPix(cx+hw,cy-hh)||solidPix(cx-hw,cy+hh)||solidPix(cx+hw,cy+hh)
-         || npcAtPix(cx,cy)); }
-function npcAtPix(px,py){ for(const n of NPCS){ const nx=n.x*TS+TS/2, ny=n.y*TS+TS/2;
-  if(Math.abs(px-nx)<TS*0.7 && Math.abs(py-ny)<TS*0.7) return n; } return null; }
+function npcTalk(name){
+  if(name==='Mother'){ if(quest===0) return {lines:[
+    "Alden... that dream again. The blue star. The voice that calls your name.",
+    "I have feared this since you were small. But I see it in your eyes - you must know what fell beyond the Frostfangs.",
+    "Go and speak with Old Maelis, by the fountain. Then come back to me."],after:()=>{quest=1;}};
+    return {lines:["Maelis waits by the fountain, my boy.","And Alden... come home to me. Promise me that."]}; }
+  if(name==='Old Maelis'){ if(quest<1) return {lines:["You carry a shadow, child. But your road has not yet opened."]};
+    if(quest===1) return {lines:[
+    "So. The falling star has called one of us at last.",
+    "'When the Lion sleeps, darkness rises. Seek the Crown of Dawn before the Last Eclipse.'",
+    "The blade your father forged is no common steel. Take it from the forge - then the north pass is yours."],after:()=>{quest=2;}};
+    return {lines:["Follow the star, Alden. Keep the blade close, and your heart closer."]}; }
+  if(name==='Father'){ if(quest<2) return {lines:["There's work at the forge, son.","...Though your mind is far from here today."]};
+    if(quest===2) return {lines:[
+    "So Maelis sent you. ...I always feared this day would come.",
+    "I forged this blade the night you were born. The metal sang. It was always meant to be yours.",
+    "(You received the CRYSTAL BLADE.)",
+    "Go, Alden. Follow your star - but make it home to your mother and me."],after:()=>{quest=3;hasBlade=true;}};
+    return {lines:["The blade is yours now. The north gate will not bar you. Go, son."]}; }
+  if(name==='Villager'){ if(quest>=3) return {lines:["You're really climbing into the Frostfangs after it?","...Gods keep you, Alden."]};
+    return {lines:["Did you see it? That blue star!","Crashed somewhere past the Frostfangs, they say."]}; }
+  if(name==='Shopkeeper') return {lines:["Potions, rope, supplies - I'd spare some if coin weren't tight.","Hard times since the harvest."]};
+  return {lines:["..."]};
+}
 
-function frontTile(){ let dx=0,dy=0;
-  if(player.dir==='up')dy=-1; else if(player.dir==='down')dy=1; else if(player.dir==='left')dx=-1; else dx=1;
-  return {x:player.x+dx*TS, y:player.y+dy*TS, tx:Math.floor((player.x+dx*TS)/TS), ty:Math.floor((player.y+dy*TS)/TS)}; }
+function cellAt(px,py){const tx=(px/TS)|0,ty=(py/TS)|0; if(tx<0||ty<0||tx>=MW||ty>=MH)return 1; return G[ty][tx];}
+function solid(px,py){return cellAt(px,py)===1||cellAt(px,py)===2;}
+function npcAtPix(px,py){for(const n of NPCS){const nx=n.x*TS+TS/2,ny=n.y*TS+TS/2;
+  if(Math.abs(px-nx)<TS*0.7&&Math.abs(py-ny)<TS*0.7)return n;}return null;}
+function boxFree(cx,cy){const hw=player.w/2,hh=player.h/2;
+  return !(solid(cx-hw,cy-hh)||solid(cx+hw,cy-hh)||solid(cx-hw,cy+hh)||solid(cx+hw,cy+hh)||npcAtPix(cx,cy));}
+function frontCell(){let dx=0,dy=0; if(player.dir==='up')dy=-1;else if(player.dir==='down')dy=1;else if(player.dir==='left')dx=-1;else dx=1;
+  const fx=player.x+dx*TS, fy=player.y+dy*TS; return {x:fx,y:fy,tx:(fx/TS)|0,ty:(fy/TS)|0};}
 
 function interact(){
-  if(dialogue){ dlgIdx++; if(dlgIdx>=dialogue.length){ dialogue=null; } return; }
-  const f=frontTile();
-  const n=npcAtPix(f.x,f.y);
-  if(n){ dialogue=n.lines; dlgIdx=0; dlgName=n.name;
-    n.dir = (player.dir==='up'?'down':player.dir==='down'?'up':player.dir==='left'?'right':'left'); return; }
-  const id=tileAt(f.x,f.y); const key=f.ty+','+f.tx;
-  if(id===10 && SIGNS[key]){ dialogue=[SIGNS[key]]; dlgIdx=0; dlgName='SIGN'; return; }
-  if(id===6){ dialogue=["The door is shut. (Homes open in a later chapter.)"]; dlgIdx=0; dlgName=''; return; }
-  if(id===8){ dialogue=["The old church bell hangs silent."]; dlgIdx=0; dlgName=''; return; }
+  if(dialogue){dlgIdx++; if(dlgIdx>=dialogue.length){dialogue=null; const a=dlgAfter; dlgAfter=null; if(a)a();} return;}
+  const f=frontCell(); const n=npcAtPix(f.x,f.y);
+  if(n){const t=npcTalk(n.name); dialogue=t.lines; dlgIdx=0; dlgName=n.name; dlgAfter=t.after||null;
+    n.dir=(player.dir==='up'?'down':player.dir==='down'?'up':player.dir==='left'?'right':'left'); return;}
+  if(cellAt(f.x,f.y)===2){ if(quest>=3) state='end';
+    else {dialogue=["Frostbriar chokes the northern pass. It will not open to you yet."]; dlgIdx=0; dlgName='';} return;}
 }
 
-function update(){
-  tt++;
-  if(state==='title'){ if(keys.act&&!actLatch){ state='play'; } actLatch=keys.act; return; }
-  if(keys.act&&!actLatch){ interact(); }
-  actLatch=keys.act;
-  if(dialogue){ player.moving=false; return; }
-  let dx=(keys.right?1:0)-(keys.left?1:0), dy=(keys.down?1:0)-(keys.up?1:0);
-  if(dx&&dy){ dx*=0.707; dy*=0.707; }
-  const sp=2.5;
-  player.moving = !!(dx||dy);
-  if(dx<0)player.dir='left'; else if(dx>0)player.dir='right'; else if(dy<0)player.dir='up'; else if(dy>0)player.dir='down';
-  if(dx){ const nx=player.x+dx*sp; if(boxFree(nx,player.y)) player.x=nx; }
-  if(dy){ const ny=player.y+dy*sp; if(boxFree(player.x,ny)) player.y=ny; }
-  if(player.moving) player.step+=0.2; else player.step=0;
-}
-
-function drawTile(id,sx,sy){
-  ctx.fillStyle=PAL[id]||'#4f9d5b'; ctx.fillRect(sx,sy,TS,TS);
-  if(id===0||id===11){ ctx.fillStyle='rgba(0,0,0,0.05)'; ctx.fillRect(sx,sy,TS,TS);
-    if(id===11){ ctx.fillStyle='#ffd86b'; ctx.beginPath(); ctx.arc(sx+TS/2,sy+TS/2,4,0,7); ctx.fill();
-      ctx.fillStyle='#ff7da0'; ctx.beginPath(); ctx.arc(sx+TS*0.3,sy+TS*0.4,3,0,7); ctx.fill(); } }
-  else if(id===2){ ctx.fillStyle='#3f8a4a'; ctx.beginPath(); ctx.arc(sx+TS/2,sy+TS*0.45,TS*0.42,0,7); ctx.fill();
-    ctx.fillStyle='#27502f'; ctx.fillRect(sx+TS*0.44,sy+TS*0.6,TS*0.12,TS*0.35); }
-  else if(id===3){ ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(sx,sy+ (Math.sin(tt*0.06+sx)*2|0)+TS*0.4, TS, 3); }
-  else if(id===5){ ctx.fillStyle='#6f3a2c'; ctx.beginPath(); ctx.moveTo(sx,sy+TS); ctx.lineTo(sx+TS/2,sy); ctx.lineTo(sx+TS,sy+TS); ctx.fill(); }
-  else if(id===4||id===7){ ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.strokeRect(sx+2,sy+2,TS-4,TS-4);
-    ctx.fillStyle='rgba(120,170,255,0.25)'; ctx.fillRect(sx+TS*0.3,sy+TS*0.25,TS*0.4,TS*0.3); }
-  else if(id===6){ ctx.fillStyle='#3a2a18'; ctx.fillRect(sx+TS*0.2,sy+TS*0.15,TS*0.6,TS*0.85);
-    ctx.fillStyle='#d8c468'; ctx.beginPath(); ctx.arc(sx+TS*0.65,sy+TS*0.55,2.5,0,7); ctx.fill(); }
-  else if(id===8){ ctx.fillStyle='#b8a23a'; ctx.beginPath(); ctx.arc(sx+TS/2,sy+TS*0.5,TS*0.3,Math.PI,0); ctx.fill();
-    ctx.fillRect(sx+TS*0.45,sy+TS*0.5,TS*0.1,TS*0.3); }
-  else if(id===9){ ctx.fillStyle='#7a4a2a'; ctx.fillRect(sx+2,sy+TS*0.5,TS-4,TS*0.45);
-    ctx.fillStyle='#d65a5a'; ctx.fillRect(sx,sy+TS*0.32,TS,TS*0.2);
-    ctx.fillStyle='#f0d090'; ctx.fillRect(sx,sy+TS*0.28,TS,5); }
-  else if(id===10){ ctx.fillStyle='#6b4a2a'; ctx.fillRect(sx+TS*0.15,sy+TS*0.2,TS*0.7,TS*0.5);
-    ctx.fillStyle='#e8d8b0'; ctx.fillRect(sx+TS*0.22,sy+TS*0.28,TS*0.56,TS*0.34);
-    ctx.fillStyle='#6b4a2a'; ctx.fillRect(sx+TS*0.45,sy+TS*0.6,TS*0.1,TS*0.35); }
-  else if(id===1){ ctx.fillStyle='rgba(120,90,40,0.18)'; for(let i=0;i<3;i++){ctx.fillRect(sx+6+i*12,sy+8+((i*7)%20),4,4);} }
+function update(){tt++;
+  if(state==='title'){ if(keys.act&&!actLatch)state='play'; actLatch=keys.act; return;}
+  if(state==='end'){actLatch=keys.act; return;}
+  if(keys.act&&!actLatch)interact(); actLatch=keys.act;
+  if(dialogue){player.moving=false; return;}
+  let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
+  if(dx&&dy){dx*=0.707;dy*=0.707;} const sp=2.4; player.moving=!!(dx||dy);
+  if(dx<0)player.dir='left';else if(dx>0)player.dir='right';else if(dy<0)player.dir='up';else if(dy>0)player.dir='down';
+  if(dx){const nx=player.x+dx*sp; if(boxFree(nx,player.y))player.x=nx;}
+  if(dy){const ny=player.y+dy*sp; if(boxFree(player.x,ny))player.y=ny;}
+  player.step = player.moving ? player.step+0.2 : 0;
 }
 
 function drawChar(px,py,color,dir,step,isHero){
-  const bob = Math.sin(step)*2;
-  // shadow
-  ctx.fillStyle='rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(px,py+11,12,5,0,0,7); ctx.fill();
-  // body
-  ctx.fillStyle=color; ctx.fillRect(px-10,py-14+bob,20,20);
-  // head
-  ctx.fillStyle='#f0c8a0'; ctx.beginPath(); ctx.arc(px,py-18+bob,8,0,7); ctx.fill();
-  ctx.fillStyle='#5a3a1e'; ctx.beginPath(); ctx.arc(px,py-21+bob,8,Math.PI,0); ctx.fill(); // hair
-  if(isHero){ ctx.fillStyle='#ffd86b'; ctx.fillRect(px-4,py-6+bob,8,5); }  // lion-gold chest accent
-  // facing eyes/indicator
+  const bob=Math.sin(step)*2;
+  ctx.fillStyle='rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(px,py+12,13,5,0,0,7); ctx.fill();
+  ctx.fillStyle=color; ctx.fillRect(px-9,py-13+bob,18,19);
+  ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(px-9,py-13+bob,5,19);
+  ctx.fillStyle='#f0c8a0'; ctx.beginPath(); ctx.arc(px,py-17+bob,7,0,7); ctx.fill();
+  ctx.fillStyle='#5a3a1e'; ctx.beginPath(); ctx.arc(px,py-20+bob,7,Math.PI,0); ctx.fill();
+  if(isHero){ctx.fillStyle='#ffd86b'; ctx.fillRect(px-3,py-6+bob,6,5);}
   ctx.fillStyle='#222';
-  if(dir==='down'){ ctx.fillRect(px-4,py-19+bob,2,2); ctx.fillRect(px+2,py-19+bob,2,2); }
-  else if(dir==='up'){ /* back of head */ }
-  else if(dir==='left'){ ctx.fillRect(px-6,py-19+bob,2,2); }
-  else { ctx.fillRect(px+4,py-19+bob,2,2); }
+  if(dir==='down'){ctx.fillRect(px-3,py-18+bob,2,2);ctx.fillRect(px+2,py-18+bob,2,2);}
+  else if(dir==='left'){ctx.fillRect(px-5,py-18+bob,2,2);} else if(dir==='right'){ctx.fillRect(px+3,py-18+bob,2,2);}
 }
 
 function draw(){
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  ctx.clearRect(0,0,VW,VH);
-  // camera centered on player, clamped
-  let camX=player.x-VW/2, camY=player.y-VH/2;
-  camX=Math.max(0,Math.min(mapPxW-VW,camX)); camY=Math.max(0,Math.min(mapPxH-VH,camY));
-  if(mapPxW<VW) camX=(mapPxW-VW)/2; if(mapPxH<VH) camY=(mapPxH-VH)/2;
-  const x0=Math.floor(camX/TS), y0=Math.floor(camY/TS);
-  const x1=Math.ceil((camX+VW)/TS), y1=Math.ceil((camY+VH)/TS);
-  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
-    if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H){ ctx.fillStyle='#16361f'; ctx.fillRect(tx*TS-camX,ty*TS-camY,TS,TS); continue; }
-    drawTile(MAP[ty][tx], tx*TS-camX, ty*TS-camY);
-  }
-  // NPCs
-  for(const n of NPCS){ drawChar(n.x*TS+TS/2-camX, n.y*TS+TS/2-camY, n.color, n.dir, 0, false); }
-  // player
-  drawChar(player.x-camX, player.y-camY, '#2e3a55', player.dir, player.step, true);
-
-  // HUD name tag
-  ctx.fillStyle='rgba(8,12,20,0.6)'; ctx.fillRect(10,10,120,30);
-  ctx.fillStyle='#ffd86b'; ctx.font='bold 16px "Trebuchet MS"'; ctx.fillText('⚔ '+player.name,18,31);
-
-  if(dialogue){
-    const bh=120, by=VH-bh-90;
-    ctx.fillStyle='rgba(8,12,22,0.94)'; ctx.fillRect(16,by,VW-32,bh);
-    ctx.strokeStyle='#6da'; ctx.lineWidth=2; ctx.strokeRect(16,by,VW-32,bh);
-    if(dlgName){ ctx.fillStyle='#ffd86b'; ctx.font='bold 15px "Trebuchet MS"'; ctx.fillText(dlgName, 30, by+26); }
-    ctx.fillStyle='#eef'; ctx.font='17px "Trebuchet MS"';
-    wrap(dialogue[dlgIdx]||'', 30, by+(dlgName?52:34), VW-70, 22);
-    ctx.fillStyle='#8fb'; ctx.font='12px "Trebuchet MS"'; ctx.fillText('▶ A', VW-60, by+bh-12);
-  }
-  if(state==='title'){
-    ctx.fillStyle='rgba(4,7,14,0.86)'; ctx.fillRect(0,0,VW,VH);
-    ctx.textAlign='center';
-    ctx.fillStyle='#ffd86b'; ctx.font='bold 34px "Trebuchet MS"'; ctx.fillText('BRIAR HOLLOW',VW/2,VH*0.32);
-    ctx.fillStyle='#9fb4d8'; ctx.font='15px "Trebuchet MS"'; ctx.fillText('Chapter 1 — The Falling Star',VW/2,VH*0.32+28);
-    ctx.fillStyle='#cdd'; ctx.font='15px "Trebuchet MS"';
+  ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,VW,VH);
+  if(!bgReady){ctx.fillStyle='#0a0f16';ctx.fillRect(0,0,VW,VH);ctx.fillStyle='#9fb4d8';ctx.font='16px "Trebuchet MS"';ctx.textAlign='center';ctx.fillText('Loading Briar Hollow...',VW/2,VH/2);ctx.textAlign='left';return;}
+  let camX=player.x-VW/2,camY=player.y-VH/2;
+  camX=Math.max(0,Math.min(WW-VW,camX)); camY=Math.max(0,Math.min(WH-VH,camY));
+  if(WW<VW)camX=(WW-VW)/2; if(WH<VH)camY=(WH-VH)/2;
+  ctx.drawImage(bg,-camX,-camY,WW,WH);
+  // gate marker
+  const gx=10*TS+TS/2-camX, gy=0*TS+TS/2-camY;
+  ctx.save(); ctx.globalAlpha=0.5+0.2*Math.sin(tt*0.08);
+  ctx.strokeStyle='#ffe28a'; ctx.lineWidth=3; ctx.beginPath();
+  ctx.moveTo(gx-16,gy+20); ctx.lineTo(gx-16,gy-2); ctx.quadraticCurveTo(gx,gy-22,gx+16,gy-2); ctx.lineTo(gx+16,gy+20); ctx.stroke();
+  ctx.restore();
+  // entities y-sorted
+  const ents=NPCS.map(n=>({px:n.x*TS+TS/2-camX,py:n.y*TS+TS/2-camY,c:n.color,d:n.dir||'down',s:0,h:false}));
+  ents.push({px:player.x-camX,py:player.y-camY,c:'#2e3a55',d:player.dir,s:player.step,h:true});
+  ents.sort((a,b)=>a.py-b.py);
+  for(const e of ents) drawChar(e.px,e.py,e.c,e.d,e.s,e.h);
+  // HUD
+  ctx.fillStyle='rgba(8,12,20,0.6)'; ctx.fillRect(10,10,118,30);
+  ctx.fillStyle='#ffd86b'; ctx.font='bold 16px "Trebuchet MS"'; ctx.fillText('\u2694 '+player.name,18,31);
+  if(hasBlade){ctx.fillStyle='#9fdcff';ctx.font='12px "Trebuchet MS"';ctx.fillText('\u2605 Crystal Blade',18,56);}
+  if(state==='play'&&quest<4&&!dialogue){const o=OBJ[quest];ctx.font='13px "Trebuchet MS"';
+    const w=Math.min(VW-24,ctx.measureText(o).width+26);
+    ctx.fillStyle='rgba(8,12,20,0.74)';ctx.fillRect(VW/2-w/2,12,w,26);
+    ctx.strokeStyle='rgba(127,217,192,0.5)';ctx.lineWidth=1;ctx.strokeRect(VW/2-w/2,12,w,26);
+    ctx.fillStyle='#bfe';ctx.textAlign='center';ctx.fillText(o,VW/2,29);ctx.textAlign='left';}
+  if(dialogue){const bh=120,by=VH-bh-90;
+    ctx.fillStyle='rgba(8,12,22,0.94)';ctx.fillRect(16,by,VW-32,bh);
+    ctx.strokeStyle='#6da';ctx.lineWidth=2;ctx.strokeRect(16,by,VW-32,bh);
+    if(dlgName){ctx.fillStyle='#ffd86b';ctx.font='bold 15px "Trebuchet MS"';ctx.fillText(dlgName,30,by+26);}
+    ctx.fillStyle='#eef';ctx.font='17px "Trebuchet MS"'; wrap(dialogue[dlgIdx]||'',30,by+(dlgName?52:34),VW-70,22);
+    ctx.fillStyle='#8fb';ctx.font='12px "Trebuchet MS"';ctx.fillText('\u25b6 A',VW-60,by+bh-12);}
+  if(state==='end'){ctx.fillStyle='rgba(4,7,14,0.92)';ctx.fillRect(0,0,VW,VH);ctx.textAlign='center';
+    ctx.fillStyle='#ffd86b';ctx.font='bold 28px "Trebuchet MS"';ctx.fillText('CHAPTER 1 COMPLETE',VW/2,VH*0.34);
+    ctx.fillStyle='#cdd';ctx.font='16px "Trebuchet MS"';
+    wrapCenter('Crystal blade in hand, Alden climbs toward the Frostfangs - and the blue star that fell beyond them.',VW/2,VH*0.45,VW*0.82,24);
+    ctx.fillStyle='#9fb4d8';ctx.font='italic 15px "Trebuchet MS"';ctx.fillText('To be continued...',VW/2,VH*0.62);ctx.textAlign='left';}
+  if(state==='title'){ctx.fillStyle='rgba(4,7,14,0.78)';ctx.fillRect(0,0,VW,VH);ctx.textAlign='center';
+    ctx.fillStyle='#ffd86b';ctx.font='bold 34px "Trebuchet MS"';ctx.fillText('BRIAR HOLLOW',VW/2,VH*0.32);
+    ctx.fillStyle='#9fb4d8';ctx.font='15px "Trebuchet MS"';ctx.fillText('Chapter 1 - The Falling Star',VW/2,VH*0.32+28);
+    ctx.fillStyle='#cdd';ctx.font='15px "Trebuchet MS"';
     wrapCenter('"When the Lion sleeps, darkness rises. Seek the Crown of Dawn before the Last Eclipse."',VW/2,VH*0.5,VW*0.8,22);
-    ctx.fillStyle='#ffd86b'; ctx.font='bold 18px "Trebuchet MS"'; ctx.fillText('Tap  A  to begin',VW/2,VH*0.72);
-    ctx.textAlign='left';
-  }
-  ctx.fillStyle='rgba(159,180,216,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('BH v1', 6, VH-8);
+    ctx.fillStyle='#ffd86b';ctx.font='bold 18px "Trebuchet MS"';ctx.fillText('Tap  A  to begin',VW/2,VH*0.72);ctx.textAlign='left';}
+  ctx.fillStyle='rgba(159,180,216,0.6)';ctx.font='12px "Trebuchet MS"';ctx.textAlign='left';ctx.fillText('BH-ART v1',6,VH-8);
 }
-function wrap(t,x,y,maxw,lh){ const words=t.split(' '); let line='',yy=y;
-  for(const w of words){ const test=line+w+' '; if(ctx.measureText(test).width>maxw){ ctx.fillText(line,x,yy); line=w+' '; yy+=lh; } else line=test; }
-  ctx.fillText(line,x,yy); }
-function wrapCenter(t,cx,y,maxw,lh){ const words=t.split(' '); let line='',yy=y;
-  for(const w of words){ const test=line+w+' '; if(ctx.measureText(test).width>maxw){ ctx.fillText(line,cx,yy); line=w+' '; yy+=lh; } else line=test; }
-  ctx.fillText(line,cx,yy); }
-
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
-// ---- input ----
-addEventListener('keydown',e=>{ if(['ArrowUp','w','W'].includes(e.key))keys.up=1;
-  if(['ArrowDown','s','S'].includes(e.key))keys.down=1; if(['ArrowLeft','a','A'].includes(e.key))keys.left=1;
-  if(['ArrowRight','d','D'].includes(e.key))keys.right=1; if([' ','Enter','z','Z'].includes(e.key)){e.preventDefault();keys.act=1;} });
-addEventListener('keyup',e=>{ if(['ArrowUp','w','W'].includes(e.key))keys.up=0;
-  if(['ArrowDown','s','S'].includes(e.key))keys.down=0; if(['ArrowLeft','a','A'].includes(e.key))keys.left=0;
-  if(['ArrowRight','d','D'].includes(e.key))keys.right=0; if([' ','Enter','z','Z'].includes(e.key))keys.act=0; });
-function bind(id,k){ const el=document.getElementById(id);
-  const on=e=>{e.preventDefault();keys[k]=1;}, off=e=>{e.preventDefault();keys[k]=0;};
-  el.addEventListener('pointerdown',on); el.addEventListener('pointerup',off);
-  el.addEventListener('pointerleave',off); el.addEventListener('pointercancel',off); }
+function wrap(t,x,y,mw,lh){const ws=t.split(' ');let l='',yy=y;for(const w of ws){const tt2=l+w+' ';if(ctx.measureText(tt2).width>mw){ctx.fillText(l,x,yy);l=w+' ';yy+=lh;}else l=tt2;}ctx.fillText(l,x,yy);}
+function wrapCenter(t,cx,y,mw,lh){const ws=t.split(' ');let l='',yy=y;for(const w of ws){const tt2=l+w+' ';if(ctx.measureText(tt2).width>mw){ctx.fillText(l,cx,yy);l=w+' ';yy+=lh;}else l=tt2;}ctx.fillText(l,cx,yy);}
+function loop(){update();draw();requestAnimationFrame(loop);}
+addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=1;if(['ArrowDown','s','S'].includes(e.key))keys.down=1;
+  if(['ArrowLeft','a','A'].includes(e.key))keys.left=1;if(['ArrowRight','d','D'].includes(e.key))keys.right=1;
+  if([' ','Enter','z','Z'].includes(e.key)){e.preventDefault();keys.act=1;}});
+addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=0;if(['ArrowDown','s','S'].includes(e.key))keys.down=0;
+  if(['ArrowLeft','a','A'].includes(e.key))keys.left=0;if(['ArrowRight','d','D'].includes(e.key))keys.right=0;
+  if([' ','Enter','z','Z'].includes(e.key))keys.act=0;});
+function bind(id,k){const el=document.getElementById(id);const on=e=>{e.preventDefault();keys[k]=1;},off=e=>{e.preventDefault();keys[k]=0;};
+  el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);el.addEventListener('pointerleave',off);el.addEventListener('pointercancel',off);}
 bind('du','up');bind('dd','down');bind('dl','left');bind('dr','right');bind('abtn','act');
 loop();
 </script></body></html>
