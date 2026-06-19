@@ -27,7 +27,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="ver">BH-ART2 v4</div>
+<div id="ver">BH-ART2 v5</div>
 <div id="hint">Drag the left side to walk &middot; or use WASD / arrows</div>
 <div id="loading">Loading Briar Hollow&hellip;</div>
 <script>
@@ -73,9 +73,9 @@ const player = {
 
 // ---- buildings (placeholder, code-drawn) ----
 const BUILDINGS = [
-  { name:'cottage', bx:320, by:300, w:108, h:112, label:'Cottage' },
-  { name:'forge',   bx:935, by:380, w:112, h:108, label:'Forge' },
-  { name:'shop',    bx:880, by:830, w:112, h:98,  label:'Shop' },
+  { name:'cottage', bx:389, by:244, w:108, h:112, label:'Cottage' },
+  { name:'forge',   bx:891, by:425, w:112, h:108, label:'Forge' },
+  { name:'shop',    bx:231, by:659, w:112, h:98,  label:'Shop' },
 ];
 const B_HALFW = 50, B_BASEDEPTH = 34, B_FRONT = 6;
 function inBuilding(wx,wy){
