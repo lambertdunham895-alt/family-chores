@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Briar Hollow</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#0c1410; touch-action:none; }
+  #game { display:block; width:100vw; height:100vh; }
+  #ver {
+    position:fixed; left:8px; bottom:7px; z-index:10;
+    font:600 12px/1 -apple-system,system-ui,sans-serif;
+    color:#fff; opacity:.55; text-shadow:0 1px 2px #000; pointer-events:none;
+  }
+  #hint {
+    position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:10;
+    font:600 13px/1.3 -apple-system,system-ui,sans-serif; color:#fff;
+    background:rgba(0,0,0,.42); padding:7px 13px; border-radius:20px;
+    text-align:center; pointer-events:none; transition:opacity .6s; text-shadow:0 1px 2px #000;
+  }
+  #loading {
+    position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+    background:#0c1410; color:#d8c9a8; font:600 16px -apple-system,system-ui,sans-serif;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ver">BH-ART2 v1</div>
+<div id="hint">Drag the left side to walk &middot; or use WASD / arrows</div>
+<div id="loading">Loading Briar Hollow&hellip;</div>
+<script>
+"use strict";
+const GD = {"TS": 38, "GW": 33, "GH": 33, "grid": [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]};
+const TS = GD.TS, GW = GD.GW, GH = GD.GH, GRID = GD.grid;
+const WORLD_W = GW * TS, WORLD_H = GH * TS;   // world units == source px
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let DPR = 1, VW = 0, VH = 0, ZOOM = 1;
+const VISIBLE_SPAN = 600;   // world px shown across the shorter screen axis (zoom feel)
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = window.innerWidth; VH = window.innerHeight;
+  canvas.width = Math.floor(VW * DPR);
+  canvas.height = Math.floor(VH * DPR);
+  canvas.style.width = VW + 'px';
+  canvas.style.height = VH + 'px';
+  ZOOM = Math.min(VW, VH) / VISIBLE_SPAN;
+  ZOOM = Math.max(0.6, Math.min(ZOOM, 2.4));
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---- background ----
+const bg = new Image();
+let bgReady = false;
+bg.onload = () => { bgReady = true; document.getElementById('loading').style.display='none'; };
+bg.onerror = () => { document.getElementById('loading').textContent='Could not load assets/bg.jpg'; };
+bg.src = 'assets/bg.jpg?v=1';
+
+// ---- player ----
+const player = {
+  x: 615, y: 545,        // spawn near plaza center (source px)
+  vx: 0, vy: 0,
+  speed: 165,            // world px / second
+  face: 'down',
+  moving: false,
+  anim: 0
+};
+
+// collision: is this world point blocked?
+function blockedAt(wx, wy){
+  if (wx < 0 || wy < 0 || wx >= WORLD_W || wy >= WORLD_H) return true;
+  const gx = (wx / TS) | 0, gy = (wy / TS) | 0;
+  return GRID[gy][gx] === 1;
+}
+// feet box test (small box at character base)
+const FOOT_HW = 9, FOOT_HH = 5;   // half-width / half-height of feet collider
+function feetBlocked(wx, wy){
+  return blockedAt(wx - FOOT_HW, wy - FOOT_HH) ||
+         blockedAt(wx + FOOT_HW, wy - FOOT_HH) ||
+         blockedAt(wx - FOOT_HW, wy + FOOT_HH) ||
+         blockedAt(wx + FOOT_HW, wy + FOOT_HH) ||
+         blockedAt(wx, wy);
+}
+
+// ---- input ----
+const keys = {};
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(k)) e.preventDefault();
+  keys[k] = true; hideHint();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// floating joystick (touch)
+let stick = { active:false, id:null, bx:0, by:0, dx:0, dy:0 };
+const STICK_MAX = 46;
+function ptIn(t){ return { x:t.clientX, y:t.clientY }; }
+canvas.addEventListener('touchstart', e => {
+  for (const t of e.changedTouches){
+    if (!stick.active){            // any touch starts/anchors the stick
+      stick.active = true; stick.id = t.identifier;
+      stick.bx = t.clientX; stick.by = t.clientY; stick.dx = 0; stick.dy = 0;
+      hideHint();
+    }
+  }
+}, {passive:true});
+canvas.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches){
+    if (t.identifier === stick.id){
+      let dx = t.clientX - stick.bx, dy = t.clientY - stick.by;
+      const d = Math.hypot(dx,dy);
+      if (d > STICK_MAX){ dx = dx/d*STICK_MAX; dy = dy/d*STICK_MAX; }
+      stick.dx = dx; stick.dy = dy;
+    }
+  }
+}, {passive:true});
+function endTouch(e){
+  for (const t of e.changedTouches){
+    if (t.identifier === stick.id){ stick.active=false; stick.id=null; stick.dx=0; stick.dy=0; }
+  }
+}
+canvas.addEventListener('touchend', endTouch, {passive:true});
+canvas.addEventListener('touchcancel', endTouch, {passive:true});
+
+let hintHidden = false;
+function hideHint(){ if(!hintHidden){ hintHidden=true; const h=document.getElementById('hint'); h.style.opacity='0'; setTimeout(()=>h.remove(),700);} }
+
+// ---- camera ----
+const cam = { x:0, y:0 };
+function updateCamera(){
+  const halfW = (VW/ZOOM)/2, halfH = (VH/ZOOM)/2;
+  let cx = player.x - halfW, cy = player.y - halfH;
+  cx = Math.max(0, Math.min(cx, WORLD_W - VW/ZOOM));
+  cy = Math.max(0, Math.min(cy, WORLD_H - VH/ZOOM));
+  if (WORLD_W < VW/ZOOM) cx = (WORLD_W - VW/ZOOM)/2;
+  if (WORLD_H < VH/ZOOM) cy = (WORLD_H - VH/ZOOM)/2;
+  cam.x = cx; cam.y = cy;
+}
+
+// ---- update ----
+function readInput(){
+  let ix = 0, iy = 0;
+  if (keys['arrowleft']||keys['a']) ix -= 1;
+  if (keys['arrowright']||keys['d']) ix += 1;
+  if (keys['arrowup']||keys['w']) iy -= 1;
+  if (keys['arrowdown']||keys['s']) iy += 1;
+  if (stick.active){ ix += stick.dx/STICK_MAX; iy += stick.dy/STICK_MAX; }
+  const m = Math.hypot(ix,iy);
+  if (m > 1){ ix/=m; iy/=m; }
+  return { ix, iy, mag:Math.min(m,1) };
+}
+
+function update(dt){
+  const { ix, iy, mag } = readInput();
+  player.moving = mag > 0.08;
+  if (player.moving){
+    if (Math.abs(ix) > Math.abs(iy)) player.face = ix < 0 ? 'left' : 'right';
+    else player.face = iy < 0 ? 'up' : 'down';
+    player.anim += dt * 9;
+  } else { player.anim = 0; }
+
+  const step = player.speed * mag * dt;
+  // axis-separated movement => slide along walls instead of sticking
+  let nx = player.x + ix * step;
+  if (!feetBlocked(nx, player.y)) player.x = nx;
+  let ny = player.y + iy * step;
+  if (!feetBlocked(player.x, ny)) player.y = ny;
+
+  updateCamera();
+}
+
+// ---- draw ----
+function worldToScreen(wx, wy){
+  return [ (wx - cam.x) * ZOOM, (wy - cam.y) * ZOOM ];
+}
+
+function drawPlayer(){
+  const [sx, sy] = worldToScreen(player.x, player.y);
+  const s = ZOOM;
+  const bob = player.moving ? Math.sin(player.anim) * 1.6 * s : 0;
+  // shadow
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 1*s, 11*s, 5*s, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // simple 2.5D placeholder figure (feet at sx,sy)
+  const bodyW = 16*s, bodyH = 20*s, headR = 7*s;
+  const topY = sy - 4*s - bobAbs();
+  function bobAbs(){ return Math.abs(bob); }
+  // legs
+  ctx.fillStyle = '#3b3147';
+  ctx.fillRect(sx - 6*s, sy - 9*s - bobAbs(), 5*s, 9*s);
+  ctx.fillRect(sx + 1*s, sy - 9*s - bobAbs(), 5*s, 9*s);
+  // body (tunic)
+  ctx.fillStyle = '#3f7d4f';
+  roundRect(sx - bodyW/2, topY - bodyH, bodyW, bodyH, 4*s); ctx.fill();
+  // belt
+  ctx.fillStyle = '#6b4a2b';
+  ctx.fillRect(sx - bodyW/2, topY - 7*s, bodyW, 3*s);
+  // head
+  const headY = topY - bodyH - headR + 3*s;
+  ctx.fillStyle = '#e9b48c';
+  ctx.beginPath(); ctx.arc(sx, headY, headR, 0, Math.PI*2); ctx.fill();
+  // hair
+  ctx.fillStyle = '#6b4427';
+  ctx.beginPath(); ctx.arc(sx, headY - 2*s, headR, Math.PI, 2*Math.PI); ctx.fill();
+  // facing cue (eyes / direction)
+  ctx.fillStyle = '#2a1c12';
+  if (player.face === 'down'){
+    ctx.fillRect(sx - 3.5*s, headY, 1.6*s, 1.6*s);
+    ctx.fillRect(sx + 1.9*s, headY, 1.6*s, 1.6*s);
+  } else if (player.face === 'up'){
+    ctx.fillStyle = '#6b4427';
+    ctx.beginPath(); ctx.arc(sx, headY, headR*0.92, 0, Math.PI*2); ctx.fill();
+  } else if (player.face === 'left'){
+    ctx.fillRect(sx - 4*s, headY, 1.8*s, 1.8*s);
+  } else {
+    ctx.fillRect(sx + 2.2*s, headY, 1.8*s, 1.8*s);
+  }
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function drawGateMarker(){
+  // subtle glow at top of main road (north exit) for orientation only
+  const gx = 16*TS + TS/2, gy = 1*TS; // top, main-road column
+  const [sx, sy] = worldToScreen(gx, gy);
+  const pulse = 0.45 + 0.25*Math.sin(performance.now()/500);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, 30*ZOOM);
+  g.addColorStop(0,'#ffe9a8'); g.addColorStop(1,'rgba(255,233,168,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, 30*ZOOM, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawJoystick(){
+  if (!stick.active) return;
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(stick.bx, stick.by, STICK_MAX, 0, Math.PI*2); ctx.stroke();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(stick.bx + stick.dx, stick.by + stick.dy, 18, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function render(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,VW,VH);
+  ctx.fillStyle = '#0c1410'; ctx.fillRect(0,0,VW,VH);
+  if (bgReady){
+    // draw the slice of world under the camera
+    const sx = cam.x, sy = cam.y;
+    const sw = VW/ZOOM, sh = VH/ZOOM;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, VW, VH);
+  }
+  drawGateMarker();
+  drawPlayer();
+  drawJoystick();
+}
+
+// ---- loop (fixed-step) ----
+let last = performance.now(), acc = 0;
+const STEP = 1/60;
+function frame(now){
+  let dt = (now - last)/1000; last = now;
+  if (dt > 0.1) dt = 0.1;
+  acc += dt;
+  while (acc >= STEP){ update(STEP); acc -= STEP; }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// expose for headless tests
+globalThis.T = { player, cam, blockedAt, feetBlocked, update, readInput,
+  setInput:(ix,iy)=>{ keys['arrowright']=ix>0; keys['arrowleft']=ix<0; keys['arrowdown']=iy>0; keys['arrowup']=iy<0; },
+  WORLD_W, WORLD_H };
+</script>
+</body>
+</html>
