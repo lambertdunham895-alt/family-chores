@@ -27,7 +27,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="ver">BH-ART2 v3</div>
+<div id="ver">BH-ART2 v4</div>
 <div id="hint">Drag the left side to walk &middot; or use WASD / arrows</div>
 <div id="loading">Loading Briar Hollow&hellip;</div>
 <script>
@@ -71,6 +71,20 @@ const player = {
   anim: 0
 };
 
+// ---- buildings (placeholder, code-drawn) ----
+const BUILDINGS = [
+  { name:'cottage', bx:320, by:300, w:108, h:112, label:'Cottage' },
+  { name:'forge',   bx:935, by:380, w:112, h:108, label:'Forge' },
+  { name:'shop',    bx:880, by:830, w:112, h:98,  label:'Shop' },
+];
+const B_HALFW = 50, B_BASEDEPTH = 34, B_FRONT = 6;
+function inBuilding(wx,wy){
+  for(const b of BUILDINGS){
+    if(wx>b.bx-B_HALFW && wx<b.bx+B_HALFW && wy>b.by-B_BASEDEPTH && wy<b.by+B_FRONT) return true;
+  }
+  return false;
+}
+
 // collision: is this world point blocked?
 function blockedAt(wx, wy){
   if (wx < 0 || wy < 0 || wx >= WORLD_W || wy >= WORLD_H) return true;
@@ -80,11 +94,14 @@ function blockedAt(wx, wy){
 // feet box test (small box at character base)
 const FOOT_HW = 9, FOOT_HH = 5;   // half-width / half-height of feet collider
 function feetBlocked(wx, wy){
-  return blockedAt(wx - FOOT_HW, wy - FOOT_HH) ||
-         blockedAt(wx + FOOT_HW, wy - FOOT_HH) ||
-         blockedAt(wx - FOOT_HW, wy + FOOT_HH) ||
-         blockedAt(wx + FOOT_HW, wy + FOOT_HH) ||
-         blockedAt(wx, wy);
+  if (blockedAt(wx - FOOT_HW, wy - FOOT_HH) ||
+      blockedAt(wx + FOOT_HW, wy - FOOT_HH) ||
+      blockedAt(wx - FOOT_HW, wy + FOOT_HH) ||
+      blockedAt(wx + FOOT_HW, wy + FOOT_HH) ||
+      blockedAt(wx, wy)) return true;
+  // building footprints
+  if (inBuilding(wx - FOOT_HW, wy) || inBuilding(wx + FOOT_HW, wy) || inBuilding(wx, wy)) return true;
+  return false;
 }
 
 // ---- input ----
@@ -264,6 +281,58 @@ function drawJoystick(){
   ctx.restore();
 }
 
+function labelBanner(sx, topY, text, s){
+  ctx.font = `600 ${Math.round(11*s)}px -apple-system,system-ui,sans-serif`;
+  const tw = ctx.measureText(text).width;
+  const padX = 6*s, bh = 16*s, bw = tw + padX*2;
+  ctx.fillStyle = 'rgba(20,16,12,.82)';
+  roundRect(sx - bw/2, topY - bh, bw, bh, 4*s); ctx.fill();
+  ctx.fillStyle = '#f3e7cf'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(text, sx, topY - bh/2);
+  ctx.textAlign='start'; ctx.textBaseline='alphabetic';
+}
+
+function drawBuilding(b){
+  const [sx, sy] = worldToScreen(b.bx, b.by);
+  const s = ZOOM, w = b.w*s, h = b.h*s;
+  // ground shadow
+  ctx.save(); ctx.globalAlpha=.26; ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(sx, sy, w*0.52, h*0.14, 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
+  const wallH = h*0.56, roofH = h*0.46;
+  const left = sx - w/2, top = sy - wallH;
+  let wall='#cdb38b', roof='#8a4b32';
+  if(b.name==='forge'){ wall='#8b8b95'; roof='#45454e'; }
+  if(b.name==='shop'){ wall='#b9874e'; roof='#7a4322'; }
+  // walls
+  ctx.fillStyle = wall; ctx.fillRect(left, top, w, wallH);
+  ctx.fillStyle = 'rgba(0,0,0,.13)'; ctx.fillRect(left + w*0.6, top, w*0.4, wallH); // shade
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(left, top, w, 3*s);               // eave line
+  // roof
+  ctx.fillStyle = roof; ctx.beginPath();
+  ctx.moveTo(left - w*0.06, top); ctx.lineTo(sx, top - roofH); ctx.lineTo(left + w + w*0.06, top);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.08)'; ctx.beginPath();
+  ctx.moveTo(left - w*0.06, top); ctx.lineTo(sx, top - roofH); ctx.lineTo(sx, top); ctx.closePath(); ctx.fill();
+  // per-type detail
+  if(b.name==='cottage'){
+    ctx.fillStyle='#5a3a22'; ctx.fillRect(sx - 8*s, top + wallH - 22*s, 16*s, 22*s); // door
+    ctx.fillStyle='#7fc6e8'; ctx.fillRect(left + 10*s, top + 8*s, 12*s, 12*s);        // window
+    ctx.fillStyle='#6b6b6b'; ctx.fillRect(sx + w*0.22, top - roofH*0.7, 8*s, roofH*0.7); // chimney
+  } else if(b.name==='forge'){
+    const dx = sx - 11*s, dy = top + wallH - 26*s;
+    const g = ctx.createRadialGradient(sx, dy+13*s, 2*s, sx, dy+13*s, 20*s);
+    g.addColorStop(0,'#ffd36b'); g.addColorStop(.5,'#ff7a1a'); g.addColorStop(1,'rgba(255,90,20,0)');
+    ctx.fillStyle='#1c130c'; ctx.fillRect(dx, dy, 22*s, 26*s);   // dark doorway
+    ctx.fillStyle=g; ctx.fillRect(dx-6*s, dy-4*s, 34*s, 34*s);   // fire glow
+  } else if(b.name==='shop'){
+    const ay = top + 4*s, aw = w/6;
+    for(let i=0;i<6;i++){ ctx.fillStyle = i%2? '#f3eee2':'#c0392b';
+      ctx.fillRect(left + i*aw, ay, aw, 9*s); }                  // striped awning
+    ctx.fillStyle='#8a5a2b'; ctx.fillRect(left + 8*s, top + wallH - 14*s, w - 16*s, 14*s); // counter
+  }
+  labelBanner(sx, top - roofH - 4*s, b.label, s);
+}
+
 function render(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.clearRect(0,0,VW,VH);
@@ -276,7 +345,10 @@ function render(){
     ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, VW, VH);
   }
   drawGateMarker();
-  drawPlayer();
+  const draws = BUILDINGS.map(b => ({ y:b.by, fn:() => drawBuilding(b) }));
+  draws.push({ y: player.y, fn: drawPlayer });
+  draws.sort((a,b) => a.y - b.y);
+  for (const d of draws) d.fn();
   drawJoystick();
 }
 
@@ -296,7 +368,7 @@ requestAnimationFrame(frame);
 // expose for headless tests
 globalThis.T = { player, cam, blockedAt, feetBlocked, update, readInput,
   setInput:(ix,iy)=>{ keys['arrowright']=ix>0; keys['arrowleft']=ix<0; keys['arrowdown']=iy>0; keys['arrowup']=iy<0; },
-  WORLD_W, WORLD_H };
+  WORLD_W, WORLD_H, BUILDINGS, inBuilding };
 </script>
 </body>
 </html>
