@@ -62,7 +62,7 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="ver">BH-ART2 v7</div>
+<div id="ver">BH-ART2 v8</div>
 <div id="hint">Drag the left side to walk &middot; or use WASD / arrows</div>
 <div id="obj"><span id="objtxt">Objective: Talk to your Mother at the cottage</span></div>
 <div id="blade" class="hidden">&#10022; Crystal Blade</div>
@@ -118,9 +118,9 @@ const player = {
 
 // ---- buildings (painted PNG art) ----
 const BUILDINGS = [
-  { name:'cottage', bx:389, by:244, art:'cottage.png', drawW:134, drawH:130, fpw:49, fpd:28, label:'Cottage' },
-  { name:'forge',   bx:891, by:425, art:'forge.png',   drawW:110, drawH:150, fpw:39, fpd:26, label:'Forge' },
-  { name:'shop',    bx:231, by:659, art:'shop.png',    drawW:125, drawH:158, fpw:47, fpd:28, label:'Shop' },
+  { name:'cottage', bx:389, by:244, art:'cottage.png', drawW:188, drawH:182, fpw:69, fpd:39, label:'Cottage' },
+  { name:'forge',   bx:891, by:425, art:'forge.png',   drawW:154, drawH:210, fpw:55, fpd:36, label:'Forge' },
+  { name:'shop',    bx:231, by:659, art:'shop.png',    drawW:175, drawH:221, fpw:66, fpd:39, label:'Shop' },
 ];
 const B_FRONT = 6;
 function inBuilding(wx,wy){
