@@ -23,12 +23,57 @@
     position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
     background:#0c1410; color:#d8c9a8; font:600 16px -apple-system,system-ui,sans-serif;
   }
+  .hidden { display:none !important; }
+  #obj {
+    position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:9;
+    font:600 13px/1.3 -apple-system,system-ui,sans-serif; color:#fff;
+    background:rgba(20,16,12,.6); padding:7px 14px; border-radius:18px;
+    text-shadow:0 1px 2px #000; pointer-events:none; max-width:90vw; text-align:center;
+  }
+  #blade {
+    position:fixed; top:46px; right:10px; z-index:9;
+    font:600 12px -apple-system,system-ui,sans-serif; color:#bfe3ff;
+    background:rgba(20,30,50,.72); padding:6px 11px; border-radius:14px; pointer-events:none;
+  }
+  #actBtn {
+    position:fixed; bottom:26px; right:18px; z-index:12;
+    font:700 15px -apple-system,system-ui,sans-serif; color:#1b140e;
+    background:#f3d089; padding:13px 20px; border-radius:26px;
+    box-shadow:0 3px 10px rgba(0,0,0,.4); border:2px solid #c79b4a; user-select:none; cursor:pointer;
+  }
+  #dlg {
+    position:fixed; left:50%; bottom:18px; transform:translateX(-50%); z-index:12;
+    width:min(620px,92vw); background:rgba(18,14,10,.95); border:2px solid #c79b4a;
+    border-radius:14px; padding:14px 18px; color:#f3e7cf;
+    font:400 15px/1.45 -apple-system,system-ui,sans-serif; user-select:none; cursor:pointer;
+  }
+  #dlgname { font-weight:800; color:#f3d089; margin-bottom:5px; }
+  #dlgmore { margin-top:8px; font-size:12px; opacity:.55; text-align:right; }
+  #complete {
+    position:fixed; inset:0; z-index:30; background:rgba(8,10,14,.93);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; color:#f3e7cf; font-family:-apple-system,system-ui,sans-serif; padding:30px;
+  }
+  #complete h1 { font-size:30px; color:#f3d089; margin-bottom:8px; }
+  #complete .sub { font-style:italic; opacity:.85; margin-bottom:20px; }
+  #complete p { max-width:470px; line-height:1.55; opacity:.92; margin-bottom:20px; }
+  #complete .end { font-size:13px; letter-spacing:3px; opacity:.6; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="ver">BH-ART2 v5</div>
+<div id="ver">BH-ART2 v7</div>
 <div id="hint">Drag the left side to walk &middot; or use WASD / arrows</div>
+<div id="obj"><span id="objtxt">Objective: Talk to your Mother at the cottage</span></div>
+<div id="blade" class="hidden">&#10022; Crystal Blade</div>
+<div id="dlg" class="hidden"><div id="dlgname"></div><div id="dlgtext"></div><div id="dlgmore"></div></div>
+<div id="actBtn" class="hidden">Talk</div>
+<div id="complete" class="hidden">
+  <h1>Chapter 1 Complete</h1>
+  <div class="sub">The Boy Who Followed the Falling Star</div>
+  <p>Alden steps through the north gate, the Crystal Blade at his side, and the fallen star waiting somewhere beyond the Whispering Wood.</p>
+  <div class="end">&mdash; END OF DEMO &mdash;</div>
+</div>
 <div id="loading">Loading Briar Hollow&hellip;</div>
 <script>
 "use strict";
@@ -71,18 +116,24 @@ const player = {
   anim: 0
 };
 
-// ---- buildings (placeholder, code-drawn) ----
+// ---- buildings (painted PNG art) ----
 const BUILDINGS = [
-  { name:'cottage', bx:389, by:244, w:108, h:112, label:'Cottage' },
-  { name:'forge',   bx:891, by:425, w:112, h:108, label:'Forge' },
-  { name:'shop',    bx:231, by:659, w:112, h:98,  label:'Shop' },
+  { name:'cottage', bx:389, by:244, art:'cottage.png', drawW:134, drawH:130, fpw:49, fpd:28, label:'Cottage' },
+  { name:'forge',   bx:891, by:425, art:'forge.png',   drawW:110, drawH:150, fpw:39, fpd:26, label:'Forge' },
+  { name:'shop',    bx:231, by:659, art:'shop.png',    drawW:125, drawH:158, fpw:47, fpd:28, label:'Shop' },
 ];
-const B_HALFW = 50, B_BASEDEPTH = 34, B_FRONT = 6;
+const B_FRONT = 6;
 function inBuilding(wx,wy){
   for(const b of BUILDINGS){
-    if(wx>b.bx-B_HALFW && wx<b.bx+B_HALFW && wy>b.by-B_BASEDEPTH && wy<b.by+B_FRONT) return true;
+    const hw=b.fpw, dp=b.fpd;
+    if(wx>b.bx-hw && wx<b.bx+hw && wy>b.by-dp && wy<b.by+B_FRONT) return true;
   }
   return false;
+}
+// load painted building art
+const BIMG = {};
+for(const b of BUILDINGS){
+  if(b.art){ const im=new Image(); im.onload=()=>{ b._ready=true; }; im.src='assets/'+b.art+'?v=7'; BIMG[b.name]=im; }
 }
 
 // collision: is this world point blocked?
@@ -101,6 +152,8 @@ function feetBlocked(wx, wy){
       blockedAt(wx, wy)) return true;
   // building footprints
   if (inBuilding(wx - FOOT_HW, wy) || inBuilding(wx + FOOT_HW, wy) || inBuilding(wx, wy)) return true;
+  // locked north gate barrier
+  if (typeof gateLocked === 'function' && gateLocked() && wx > GATE_X0 && wx < GATE_X1 && wy < GATE_BARRIER_Y) return true;
   return false;
 }
 
@@ -110,6 +163,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(k)) e.preventDefault();
   keys[k] = true; hideHint();
+  if (k === ' ' || k === 'e' || k === 'enter'){ e.preventDefault(); onAction(); }
 });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
@@ -159,6 +213,154 @@ function updateCamera(){
   cam.x = cx; cam.y = cy;
 }
 
+// ================= NPCs + QUEST =================
+const Q = { START:0, SEEK_MAELIS:1, SEEK_BLADE:2, GO_GATE:3, DONE:4 };
+let quest = Q.START;
+let hasBlade = false;
+
+const NPCS = [
+  { id:'mother', name:'Mother',     x:389, y:300, color:'#b06aa0', hair:'#7a4b2a' },
+  { id:'maelis', name:'Old Maelis', x:545, y:600, color:'#5566c0', hair:'#cfcfcf' },
+  { id:'father', name:'Father',     x:891, y:488, color:'#8a5a33', hair:'#3a2a1a' },
+  { id:'shopkeeper', name:'Shopkeeper', x:231, y:716, color:'#3f9c6a', hair:'#4a3320' },
+  { id:'villager', name:'Villager', x:770, y:610, color:'#c39a3f', hair:'#5a3a22' },
+];
+const TALK_R = 60;
+let nearby = null;
+
+const OBJ_TEXT = {
+  0:'Talk to your Mother at the cottage',
+  1:'Seek Old Maelis near the village square',
+  2:'Ask Father for the Crystal Blade at the forge',
+  3:'Leave through the north gate',
+  4:'Chapter 1 Complete',
+};
+function setQuest(q){ quest = q; updateHUD(); }
+function updateHUD(){
+  const t = document.getElementById('objtxt');
+  if (t) t.textContent = 'Objective: ' + OBJ_TEXT[quest];
+  const b = document.getElementById('blade');
+  if (b) b.classList.toggle('hidden', !hasBlade);
+}
+
+// dialogue content (state-dependent). returns { lines:[...], outcome:fn|null }
+function dialogueFor(n){
+  if (n.id === 'mother'){
+    if (quest === Q.START) return { lines:[
+      "Alden \u2014 you're awake. Did you see it? The star that fell beyond the northern hills last night.",
+      "It is the old prophecy your grandmother feared: 'When the Lion sleeps, darkness rises. Seek the Crown of Dawn before the Last Eclipse.'",
+      "Your road begins today, my son. Go to Old Maelis by the village square \u2014 she still remembers the words the rest of us let fade." ],
+      outcome:()=> setQuest(Q.SEEK_MAELIS) };
+    if (quest === Q.SEEK_MAELIS) return { lines:["Old Maelis is waiting by the square, Alden. Go to her."] };
+    return { lines:["Be brave out there, my son. Come home to me."] };
+  }
+  if (n.id === 'maelis'){
+    if (quest === Q.START) return { lines:["You wear the look of a boy who hasn't spoken to his mother yet. Go on \u2014 she has waited long enough."] };
+    if (quest === Q.SEEK_MAELIS) return { lines:[
+      "So. The star has fallen, and the blacksmith's boy comes at last. I wondered if I would live to see it.",
+      "The Crown of Dawn lies beyond the north gate, past the Whispering Wood. But you will not walk that road unarmed.",
+      "Go to your father. Ask him for the Crystal Blade \u2014 he has kept it hidden since the night you were born, for this very day." ],
+      outcome:()=> setQuest(Q.SEEK_BLADE) };
+    return { lines:["The gate is open now, Alden. Do not let the Last Eclipse find you still here."] };
+  }
+  if (n.id === 'father'){
+    if (quest === Q.SEEK_BLADE) return { lines:[
+      "Maelis sent you, didn't she. I felt this morning would be the one.",
+      "Then take it \u2014 the Crystal Blade. I forged it in starlight the night you came into this world.",
+      "The north gate is yours to pass. Go, Alden. Find the Crown\u2026 and find your way home." ],
+      outcome:()=>{ hasBlade = true; setQuest(Q.GO_GATE); } };
+    if (quest < Q.SEEK_BLADE) return { lines:["Not yet, son. Whatever Maelis has to say, hear it before you ask me for anything."] };
+    return { lines:["The blade is yours, and the gate is open. Go when your heart is ready."] };
+  }
+  if (n.id === 'shopkeeper') return { lines:["Rope, bread, lantern oil \u2014 best prices in Briar Hollow. Though you look bound for somewhere no coin can help."] };
+  return { lines:["Strange lights over the hills last night. The dogs wouldn't quiet till dawn. Something's stirring out there."] };
+}
+
+// dialogue runtime
+let dlg = null;
+function dialogueOpen(){ return dlg !== null; }
+function openDialogue(n){
+  const d = dialogueFor(n);
+  dlg = { name:n.name, lines:d.lines, idx:0, outcome:d.outcome || null };
+  renderDlg();
+  document.getElementById('actBtn').classList.add('hidden');
+}
+function advanceDialogue(){
+  if (!dlg) return;
+  dlg.idx++;
+  if (dlg.idx >= dlg.lines.length){
+    const o = dlg.outcome; dlg = null;
+    document.getElementById('dlg').classList.add('hidden');
+    if (o) o(); updateNearby();
+  } else renderDlg();
+}
+function renderDlg(){
+  document.getElementById('dlgname').textContent = dlg.name;
+  document.getElementById('dlgtext').textContent = dlg.lines[dlg.idx];
+  document.getElementById('dlgmore').textContent = (dlg.idx >= dlg.lines.length-1) ? 'tap to close' : 'tap to continue \u25b8';
+  document.getElementById('dlg').classList.remove('hidden');
+}
+function onAction(){ if (dialogueOpen()) advanceDialogue(); else if (nearby) openDialogue(nearby); }
+
+function updateNearby(){
+  if (dialogueOpen()) return;
+  let best=null, bd=TALK_R;
+  for (const n of NPCS){ const d=Math.hypot(n.x-player.x, n.y-player.y); if (d<bd){ bd=d; best=n; } }
+  nearby = best;
+  const btn = document.getElementById('actBtn');
+  if (nearby){ btn.textContent='Talk to '+nearby.name; btn.classList.remove('hidden'); }
+  else btn.classList.add('hidden');
+}
+
+// north gate
+const GATE_X0=565, GATE_X1=672, GATE_BARRIER_Y=142, GATE_TRIGGER_Y=100;
+function gateLocked(){ return quest < Q.GO_GATE; }
+function checkGate(){
+  if (quest === Q.GO_GATE && player.x > GATE_X0 && player.x < GATE_X1 && player.y < GATE_TRIGGER_Y){
+    setQuest(Q.DONE);
+    document.getElementById('complete').classList.remove('hidden');
+    document.getElementById('actBtn').classList.add('hidden');
+  }
+}
+
+function drawNPC(n){
+  const [sx,sy]=worldToScreen(n.x,n.y); const s=ZOOM;
+  ctx.save(); ctx.globalAlpha=.26; ctx.fillStyle='#000';
+  ctx.beginPath(); ctx.ellipse(sx,sy,10*s,4.5*s,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+  ctx.fillStyle='#3b3147'; ctx.fillRect(sx-5*s,sy-9*s,4*s,9*s); ctx.fillRect(sx+1*s,sy-9*s,4*s,9*s);
+  ctx.fillStyle=n.color; roundRect(sx-8*s, sy-28*s, 16*s, 20*s, 4*s); ctx.fill();
+  const headY=sy-32*s;
+  ctx.fillStyle='#e9b48c'; ctx.beginPath(); ctx.arc(sx,headY,6.5*s,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=n.hair||'#5a3a22'; ctx.beginPath(); ctx.arc(sx,headY-2*s,6.5*s,Math.PI,2*Math.PI); ctx.fill();
+  ctx.font=`600 ${Math.round(10*s)}px -apple-system,system-ui,sans-serif`;
+  const tw=ctx.measureText(n.name).width, bw=tw+10*s;
+  ctx.fillStyle='rgba(20,16,12,.72)'; roundRect(sx-bw/2, headY-21*s, bw, 14*s, 3*s); ctx.fill();
+  ctx.fillStyle='#f3e7cf'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(n.name, sx, headY-14*s); ctx.textAlign='start'; ctx.textBaseline='alphabetic';
+  if (nearby===n){ ctx.strokeStyle='rgba(255,233,168,.9)'; ctx.lineWidth=2*s;
+    ctx.beginPath(); ctx.arc(sx,sy-2*s,17*s,0,Math.PI*2); ctx.stroke(); }
+}
+
+function drawGate(){
+  const [lx,ly]=worldToScreen(GATE_X0,GATE_BARRIER_Y);
+  const [rx]=worldToScreen(GATE_X1,GATE_BARRIER_Y);
+  const s=ZOOM, midx=(lx+rx)/2;
+  ctx.fillStyle='#6b4a2b';
+  ctx.fillRect(lx-5*s, ly-48*s, 10*s, 48*s);
+  ctx.fillRect(rx-5*s, ly-48*s, 10*s, 48*s);
+  ctx.fillRect(lx-5*s, ly-48*s, (rx-lx)+10*s, 9*s);
+  if (gateLocked()){
+    ctx.fillStyle='#7a5230';
+    for (let i=0;i<5;i++){ const bx=lx+(rx-lx)*(i+0.5)/5; ctx.fillRect(bx-3*s, ly-40*s, 6*s, 40*s); }
+    ctx.fillStyle='rgba(0,0,0,.22)'; ctx.fillRect(lx, ly-22*s, rx-lx, 6*s);
+  } else {
+    const g=ctx.createRadialGradient(midx, ly-22*s, 2, midx, ly-22*s, 42*s);
+    g.addColorStop(0,'#ffe9a8'); g.addColorStop(1,'rgba(255,233,168,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(midx, ly-22*s, 42*s, 0, Math.PI*2); ctx.fill();
+  }
+  labelBanner(midx, ly-52*s, 'North Gate', s);
+}
+
 // ---- update ----
 function readInput(){
   let ix = 0, iy = 0;
@@ -173,6 +375,7 @@ function readInput(){
 }
 
 function update(dt){
+  if (dialogueOpen()){ player.moving=false; player.anim=0; updateCamera(); return; }
   const { ix, iy, mag } = readInput();
   player.moving = mag > 0.08;
   if (player.moving){
@@ -189,6 +392,8 @@ function update(dt){
   if (!feetBlocked(player.x, ny)) player.y = ny;
 
   updateCamera();
+  updateNearby();
+  checkGate();
 }
 
 // ---- draw ----
@@ -293,44 +498,18 @@ function labelBanner(sx, topY, text, s){
 }
 
 function drawBuilding(b){
+  const im = BIMG[b.name];
   const [sx, sy] = worldToScreen(b.bx, b.by);
-  const s = ZOOM, w = b.w*s, h = b.h*s;
-  // ground shadow
-  ctx.save(); ctx.globalAlpha=.26; ctx.fillStyle='#000';
-  ctx.beginPath(); ctx.ellipse(sx, sy, w*0.52, h*0.14, 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
-  const wallH = h*0.56, roofH = h*0.46;
-  const left = sx - w/2, top = sy - wallH;
-  let wall='#cdb38b', roof='#8a4b32';
-  if(b.name==='forge'){ wall='#8b8b95'; roof='#45454e'; }
-  if(b.name==='shop'){ wall='#b9874e'; roof='#7a4322'; }
-  // walls
-  ctx.fillStyle = wall; ctx.fillRect(left, top, w, wallH);
-  ctx.fillStyle = 'rgba(0,0,0,.13)'; ctx.fillRect(left + w*0.6, top, w*0.4, wallH); // shade
-  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(left, top, w, 3*s);               // eave line
-  // roof
-  ctx.fillStyle = roof; ctx.beginPath();
-  ctx.moveTo(left - w*0.06, top); ctx.lineTo(sx, top - roofH); ctx.lineTo(left + w + w*0.06, top);
-  ctx.closePath(); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,.08)'; ctx.beginPath();
-  ctx.moveTo(left - w*0.06, top); ctx.lineTo(sx, top - roofH); ctx.lineTo(sx, top); ctx.closePath(); ctx.fill();
-  // per-type detail
-  if(b.name==='cottage'){
-    ctx.fillStyle='#5a3a22'; ctx.fillRect(sx - 8*s, top + wallH - 22*s, 16*s, 22*s); // door
-    ctx.fillStyle='#7fc6e8'; ctx.fillRect(left + 10*s, top + 8*s, 12*s, 12*s);        // window
-    ctx.fillStyle='#6b6b6b'; ctx.fillRect(sx + w*0.22, top - roofH*0.7, 8*s, roofH*0.7); // chimney
-  } else if(b.name==='forge'){
-    const dx = sx - 11*s, dy = top + wallH - 26*s;
-    const g = ctx.createRadialGradient(sx, dy+13*s, 2*s, sx, dy+13*s, 20*s);
-    g.addColorStop(0,'#ffd36b'); g.addColorStop(.5,'#ff7a1a'); g.addColorStop(1,'rgba(255,90,20,0)');
-    ctx.fillStyle='#1c130c'; ctx.fillRect(dx, dy, 22*s, 26*s);   // dark doorway
-    ctx.fillStyle=g; ctx.fillRect(dx-6*s, dy-4*s, 34*s, 34*s);   // fire glow
-  } else if(b.name==='shop'){
-    const ay = top + 4*s, aw = w/6;
-    for(let i=0;i<6;i++){ ctx.fillStyle = i%2? '#f3eee2':'#c0392b';
-      ctx.fillRect(left + i*aw, ay, aw, 9*s); }                  // striped awning
-    ctx.fillStyle='#8a5a2b'; ctx.fillRect(left + 8*s, top + wallH - 14*s, w - 16*s, 14*s); // counter
+  const s = ZOOM;
+  if (im && b._ready){
+    const dw = b.drawW*s, dh = b.drawH*s;
+    ctx.drawImage(im, sx - dw/2, sy - dh, dw, dh);
+    return;
   }
-  labelBanner(sx, top - roofH - 4*s, b.label, s);
+  // loading fallback box
+  const dw = b.drawW*s, dh = b.drawH*s;
+  ctx.fillStyle = 'rgba(60,50,40,.45)';
+  ctx.fillRect(sx - dw/2, sy - dh, dw, dh);
 }
 
 function render(){
@@ -344,8 +523,9 @@ function render(){
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(bg, sx, sy, sw, sh, 0, 0, VW, VH);
   }
-  drawGateMarker();
+  drawGate();
   const draws = BUILDINGS.map(b => ({ y:b.by, fn:() => drawBuilding(b) }));
+  for (const n of NPCS) draws.push({ y:n.y, fn:() => drawNPC(n) });
   draws.push({ y: player.y, fn: drawPlayer });
   draws.sort((a,b) => a.y - b.y);
   for (const d of draws) d.fn();
@@ -366,9 +546,17 @@ function frame(now){
 requestAnimationFrame(frame);
 
 // expose for headless tests
+document.getElementById('actBtn').addEventListener('click', onAction);
+document.getElementById('dlg').addEventListener('click', advanceDialogue);
+updateHUD();
+
 globalThis.T = { player, cam, blockedAt, feetBlocked, update, readInput,
   setInput:(ix,iy)=>{ keys['arrowright']=ix>0; keys['arrowleft']=ix<0; keys['arrowdown']=iy>0; keys['arrowup']=iy<0; },
-  WORLD_W, WORLD_H, BUILDINGS, inBuilding };
+  WORLD_W, WORLD_H, BUILDINGS, inBuilding,
+  NPCS, Q, gateLocked, checkGate, dialogueFor,
+  getQuest:()=>quest, getBlade:()=>hasBlade,
+  talkComplete:(id)=>{ const n=NPCS.find(x=>x.id===id); const d=dialogueFor(n); if(d.outcome) d.outcome(); },
+  setPlayer:(x,y)=>{ player.x=x; player.y=y; } };
 </script>
 </body>
 </html>
