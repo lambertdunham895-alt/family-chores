@@ -5,6 +5,7 @@ import PegWars from "./games/PegWars.jsx";
 import ConnectFour from "./games/ConnectFour.jsx";
 import KingsAdvance from "./games/KingsAdvance.jsx";
 import PinballGame from "./games/PinballGame.jsx";
+import StellarSiegeGame from "./games/StellarSiegeGame.jsx";
 
 /* ============================================================
    GAMES REGISTRY — add a new game in 2 steps:
@@ -51,6 +52,14 @@ const GAMES = [
     icon: "🔴",
     color: "#1a2238",
     component: PinballGame,
+  },
+  {
+    id: "stellarsiege",
+    name: "Stellar Siege",
+    description: "Blast the alien armada, survive the boss waves",
+    icon: "🚀",
+    color: "#22d3ee",
+    component: StellarSiegeGame,
   },
   // Add more games here as you build them:
   // { id: "memory", name: "Memory Match", description: "...", icon: "🧠", color: "#3d7a4e", component: MemoryGame },
