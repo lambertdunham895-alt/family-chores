@@ -188,26 +188,32 @@
       { type: 'scout', count: 6 },
     ];
     const speedBonus = Math.min(1 + waveNum * 0.08, 2.2);
-    const startY = 60;
+    const startY = 62;
+    const marginX = 46;           // keep sprites off the screen edges
+    const usableW = W - marginX * 2;
+    const rowGap = 46;
     rows.forEach((row, rIdx) => {
       const cols = row.count;
-      const spacing = 300 / (cols - 1 || 1);
+      // center the row: spacing spans usable width, first/last inset by half a step
+      const step = usableW / cols;
       for (let c = 0; c < cols; c++) {
-        const isKami = Math.random() < 0.06;
+        const isKami = Math.random() < 0.10;   // more divers (was 0.06)
         const t = isKami ? 'kamikaze' : row.type;
         const def = ENEMY_TYPES[t];
         s.enemies.push({
-          type: t, baseX: 50 + c * spacing, baseY: startY + rIdx * 42,
+          type: t,
+          baseX: marginX + step * (c + 0.5),
+          baseY: startY + rIdx * rowGap,
           x: 0, y: 0, hp: def.hp, maxHp: def.hp, alive: true,
           diving: false, diveT: 0, diveVX: 0, diveVY: 0,
-          fireChance: 0.0009 * speedBonus,
+          fireChance: 0.0016 * speedBonus,      // fire more often (was 0.0009)
         });
       }
     });
     s.formationOffsetX = 0;
     s.formationOffsetY = 0;
     s.formationDir = 1;
-    s._formSpeed = 30 * speedBonus;
+    s._formSpeed = 38 * speedBonus;             // descend/slide a bit faster (was 30)
   }
 
   function spawnParticles(s, x, y, color, count) {
@@ -372,7 +378,7 @@
           e.diveVX = Math.cos(ang) * 160;
           e.diveVY = Math.abs(Math.sin(ang) * 160) + 80;
         } else if (Math.random() < e.fireChance) {
-          s.enemyBullets.push({ x: e.x, y: e.y + 10, vx: 0, vy: 220, color: '#f87171' });
+          s.enemyBullets.push({ x: e.x, y: e.y + 10, vx: 0, vy: 300, color: '#f87171' });
         }
       }
     });
@@ -383,12 +389,12 @@
     b.x += Math.sin(performance.now() / 900) * 60 * dt;
     b.x = Math.max(70, Math.min(W - 70, b.x));
     b.fireTimer -= dt;
-    const fireInterval = 0.9 - Math.min(0.5, (1 - b.hp / b.maxHp) * 0.6);
+    const fireInterval = 0.7 - Math.min(0.45, (1 - b.hp / b.maxHp) * 0.55);
     if (b.fireTimer <= 0) {
       b.fireTimer = b.kind === 'mothership' ? fireInterval * 1.15 : fireInterval;
       const spread = b.kind === 'mothership' ? 3 : 2;
       for (let i = -spread; i <= spread; i++) {
-        s.enemyBullets.push({ x: b.x, y: b.y + b.h * 0.4, vx: i * 55, vy: 220, color: '#4ade80' });
+        s.enemyBullets.push({ x: b.x, y: b.y + b.h * 0.4, vx: i * 55, vy: 280, color: '#4ade80' });
       }
     }
   }
@@ -592,7 +598,7 @@
     else poseKey = Math.floor(p.animTimer / 0.15) % 2 === 0 ? 'thrust' : 'idle';
 
     const img = SHIP_IMAGES[poseKey];
-    const drawH = 58;
+    const drawH = 72;
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -632,6 +638,37 @@
     }
   }
 
+  function drawPowerIcon(ctx, key) {
+    ctx.beginPath();
+    if (key === 'rapid') {           // double chevron (up)
+      for (const oy of [-1, 4]) {
+        ctx.moveTo(-5, oy + 2); ctx.lineTo(0, oy - 3); ctx.lineTo(5, oy + 2);
+      }
+      ctx.stroke();
+    } else if (key === 'spread') {   // three diverging arrows
+      ctx.moveTo(0, 5); ctx.lineTo(-6, -5);
+      ctx.moveTo(0, 5); ctx.lineTo(0, -6);
+      ctx.moveTo(0, 5); ctx.lineTo(6, -5);
+      ctx.stroke();
+    } else if (key === 'shield') {   // shield outline
+      ctx.moveTo(0, -6);
+      ctx.lineTo(6, -3); ctx.lineTo(6, 2);
+      ctx.quadraticCurveTo(6, 6, 0, 7);
+      ctx.quadraticCurveTo(-6, 6, -6, 2);
+      ctx.lineTo(-6, -3); ctx.closePath();
+      ctx.stroke();
+    } else if (key === 'life') {     // heart (filled)
+      ctx.moveTo(0, 6);
+      ctx.bezierCurveTo(-7, -1, -4, -7, 0, -3);
+      ctx.bezierCurveTo(4, -7, 7, -1, 0, 6);
+      ctx.fill();
+    } else if (key === 'mult') {     // x2 text
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('x2', 0, 1);
+    }
+  }
+
   function draw() {
     ctx.fillStyle = '#050814';
     ctx.fillRect(0, 0, W, H);
@@ -646,9 +683,18 @@
 
     s.powerups.forEach((pu) => {
       ctx.save();
-      ctx.shadowColor = pu.color; ctx.shadowBlur = 14;
-      ctx.fillStyle = pu.color;
-      ctx.beginPath(); ctx.arc(pu.x, pu.y, pu.r, 0, Math.PI * 2); ctx.fill();
+      ctx.translate(pu.x, pu.y);
+      // rounded badge background
+      ctx.shadowColor = pu.color; ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(8,12,22,0.9)';
+      ctx.strokeStyle = pu.color;
+      ctx.lineWidth = 2;
+      const R = pu.r + 3;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = pu.color; ctx.fillStyle = pu.color;
+      ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      drawPowerIcon(ctx, pu.key);
       ctx.restore();
     });
 
@@ -668,20 +714,32 @@
     });
     ctx.globalAlpha = 1;
 
-    s.bullets.forEach((b) => {
+    const drawBolt = (b, len, w) => {
       ctx.save();
-      ctx.shadowColor = b.color; ctx.shadowBlur = 10;
+      ctx.shadowColor = b.color; ctx.shadowBlur = 12;
+      // bright white core
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y - len);
+      ctx.lineTo(b.x + w, b.y);
+      ctx.lineTo(b.x, b.y + len * 0.35);
+      ctx.lineTo(b.x - w, b.y);
+      ctx.closePath();
+      ctx.fill();
+      // colored glow halo
+      ctx.globalAlpha = 0.55;
       ctx.fillStyle = b.color;
-      ctx.fillRect(b.x - 2, b.y - 10, 4, 16);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y - len - 2);
+      ctx.lineTo(b.x + w + 1.5, b.y);
+      ctx.lineTo(b.x, b.y + len * 0.35 + 2);
+      ctx.lineTo(b.x - w - 1.5, b.y);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
-    });
-    s.enemyBullets.forEach((b) => {
-      ctx.save();
-      ctx.shadowColor = b.color; ctx.shadowBlur = 10;
-      ctx.fillStyle = b.color;
-      ctx.fillRect(b.x - 2, b.y - 8, 4, 14);
-      ctx.restore();
-    });
+    };
+    s.bullets.forEach((b) => drawBolt(b, 11, 2.6));
+    s.enemyBullets.forEach((b) => drawBolt(b, 9, 2.6));
 
     s.particles.forEach((pt) => {
       ctx.globalAlpha = Math.max(pt.life / pt.maxLife, 0);
