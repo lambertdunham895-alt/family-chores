@@ -65,25 +65,108 @@ const SFX={
   drain:()=>{blip(200,0.5,'sawtooth',0.2); setTimeout(()=>blip(120,0.6,'sine',0.18),120);},
   wall:()=>blip(330,0.05,'sine',0.06),
   over:()=>{[440,330,247,165].forEach((f,i)=>setTimeout(()=>blip(f,0.5,'triangle',0.2),i*200));},
-  start:()=>{[330,440,550,660].forEach((f,i)=>setTimeout(()=>blip(f,0.3,'sine',0.18),i*90));}
+  start:()=>{[330,440,550,660].forEach((f,i)=>setTimeout(()=>blip(f,0.3,'sine',0.18),i*90));},
+  target:()=>{blip(880,0.09,'square',0.16); blip(1320,0.06,'sine',0.10);},
+  bank:()=>{[660,880,1100].forEach((f,i)=>setTimeout(()=>blip(f,0.18,'triangle',0.2),i*70));},
+  mission:()=>{[220,330,440,550,660,880].forEach((f,i)=>setTimeout(()=>blip(f,0.28,'sawtooth',0.16),i*80));},
+  jackpot:()=>{[880,1100,1320,1760].forEach((f,i)=>setTimeout(()=>blip(f,0.35,'square',0.2),i*90));},
+  multiball:()=>{[165,220,330,440,550,660,880,1100].forEach((f,i)=>setTimeout(()=>blip(f,0.25,'triangle',0.2),i*70));}
 };
 
 // ---------- state ----------
 let state='title';     // title | serve | play | over
-let score=0, best=0, balls=3, ball=null;
+let score=0, best=0, ballsLeft=3;
+let BALLS=[];                       // all balls in play (multiball)
+let ball=null;                      // the ball being served (serve state only)
 let plunger=0, plungerHeld=false;
 let leftHeld=false, rightHeld=false;
 let lFlip={a:REST,prev:REST,av:0}, rFlip={a:REST,prev:REST,av:0};
 let shake=0, flashMsg='', flashT=0, combo=0;
+let particles=[];
 
-function newBall(){ ball={x:serve.x,y:serve.y,vx:0,vy:0,r:13,inLane:true,age:0}; plunger=0; state='serve'; }
-function startGame(){ initAudio(); SFX.start(); score=0; balls=3; combo=0; newBall(); state='serve'; flashMsg=''; }
+// ---------- N7 drop targets ----------
+// Two banks; knocking down a whole bank lights a letter (N, then 7).
+const TGT_LEN=30;
+const targets=[
+  {x:64,  y:452, side:'L', down:false, flash:0},
+  {x:64,  y:498, side:'L', down:false, flash:0},
+  {x:64,  y:544, side:'L', down:false, flash:0},
+  {x:446, y:452, side:'R', down:false, flash:0},
+  {x:446, y:498, side:'R', down:false, flash:0},
+  {x:446, y:544, side:'R', down:false, flash:0},
+];
+function resetBank(side){ targets.forEach(t=>{ if(t.side===side) t.down=false; }); }
+function bankDown(side){ return targets.filter(t=>t.side===side).every(t=>t.down); }
+
+// ---------- mission / progression ----------
+const MISSIONS=[
+  {name:'COLLECTOR SWARM', goal:8,  desc:'HIT 8 BUMPERS'},
+  {name:'REAPER ASSAULT',  goal:6,  desc:'HIT 6 TARGETS'},
+  {name:'OMEGA RELAY',     goal:10, desc:'HIT 10 BUMPERS'},
+];
+let lit={N:false, seven:false};     // lit letters from bank completions
+let mission=null;                   // {def, prog, timer}
+let missionIdx=0;
+let multiball=false;
+let scoreMult=1;
+
+function newBall(){ ball={x:serve.x,y:serve.y,vx:0,vy:0,r:13,inLane:true,age:0}; BALLS=[]; plunger=0; state='serve'; }
+function startGame(){
+  initAudio(); SFX.start(); score=0; ballsLeft=3; combo=0;
+  lit={N:false,seven:false}; mission=null; missionIdx=0; multiball=false; scoreMult=1;
+  targets.forEach(t=>{t.down=false;t.flash=0;}); particles=[];
+  newBall(); state='serve'; flashMsg='';
+}
 function loseBall(){
-  SFX.drain(); balls--; shake=14; combo=0;
-  if(balls<=0){ best=Math.max(best,score); state='over'; SFX.over(); }
+  SFX.drain(); ballsLeft--; shake=14; combo=0;
+  multiball=false; scoreMult=1; mission=null;
+  if(ballsLeft<=0){ best=Math.max(best,score); state='over'; SFX.over(); }
   else { flash('BALL LOST'); newBall(); }
 }
 function flash(m){ flashMsg=m; flashT=1400; }
+
+function burst(x,y,color,n){
+  for(let i=0;i<(n||14);i++){
+    const a=Math.random()*Math.PI*2, sp=Math.random()*5+2;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,color});
+  }
+}
+
+function lightLetter(which){
+  if(which==='L' && !lit.N){ lit.N=true; SFX.bank(); flash('N  LIT'); }
+  if(which==='R' && !lit.seven){ lit.seven=true; SFX.bank(); flash('7  LIT'); }
+  if(lit.N && lit.seven && !mission){ startMission(); }
+}
+
+function startMission(){
+  const def=MISSIONS[missionIdx%MISSIONS.length];
+  mission={def, prog:0, timer:1500};   // ~25s at 60fps
+  scoreMult=3;
+  lit={N:false,seven:false};
+  SFX.mission(); flash(def.name);
+  shake=Math.max(shake,10);
+}
+
+function completeMission(){
+  const pts=25000;
+  addScore(pts);
+  SFX.jackpot(); flash('JACKPOT  +'+pts.toLocaleString());
+  shake=Math.max(shake,16);
+  burst(W/2,H*0.45,'#ffd24a',40);
+  missionIdx++;
+  mission=null; scoreMult=1;
+  startMultiball();
+}
+
+function startMultiball(){
+  if(multiball) return;
+  multiball=true; scoreMult=2;
+  SFX.multiball(); flash('MULTIBALL!');
+  // release two extra balls from the top bumper area
+  for(let i=0;i<2;i++){
+    BALLS.push({x:W*0.5+(i?40:-40), y:220, vx:(i?3:-3), vy:2, r:13, inLane:false, age:0});
+  }
+}
 
 // ---------- input ----------
 const pointers=new Map();
@@ -101,6 +184,7 @@ function up(id){ const was=pointers.get(id); pointers.delete(id);
 }
 function launch(){ if(state!=='serve'||!ball)return;
   ball.vy=-(28+plunger*8); ball.vx=-(1.0+plunger*2.0); ball.inLane=true; plunger=0; plungerHeld=false;
+  BALLS=[ball]; ball=null;
   state='play'; SFX.launch(); }
 cv.addEventListener('pointerdown',e=>{e.preventDefault(); initAudio(); down(e.pointerId,e.clientX);});
 cv.addEventListener('pointerup',e=>{e.preventDefault(); up(e.pointerId);});
@@ -137,76 +221,122 @@ function flipStep(f,target){            // advance one substep; sets f.av to per
 }
 
 function physics(){
-  if(!ball)return;
+  if(BALLS.length===0) return;
   const SUB=SUBSTEPS;
-  ball.vy+=0.50;                                   // gravity (px/frame)
-  { const sp=Math.hypot(ball.vx,ball.vy), MAX=34;  // cap (px/frame); MAX/SUB < r so no tunneling
-    if(sp>MAX){ ball.vx*=MAX/sp; ball.vy*=MAX/sp; } }
+  // gravity + speed cap, once per frame per ball
+  for(const bl of BALLS){
+    bl.vy+=0.50;                                   // gravity (px/frame)
+    const sp=Math.hypot(bl.vx,bl.vy), MAX=34;      // cap; MAX/SUB < r so no tunneling
+    if(sp>MAX){ bl.vx*=MAX/sp; bl.vy*=MAX/sp; }
+  }
   for(let s=0;s<SUB;s++){
-    ball.x+=ball.vx/SUB; ball.y+=ball.vy/SUB;
-
-    // lane keeps ball on right until it clears the top, then opens to field
-    if(ball.inLane){
-      if(ball.x<laneX+ball.r && ball.y>205){ ball.x=laneX+ball.r; if(ball.vx<0)ball.vx*=-0.3; }
-      if(ball.x>W-b-ball.r){ ball.x=W-b-ball.r; ball.vx*=-0.4; }
-      if(ball.y<205) ball.inLane=false;
-    } else if(ball.x>laneX-ball.r && ball.y<232 && ball.vx>=0){
-      // one-way gate: once in play, the ball can't drop back into the plunger lane
-      ball.x=laneX-ball.r; ball.vx=-Math.abs(ball.vx)*0.4-0.6;
-    }
-
-    // walls
-    for(const wl of walls){
-      const c=closest(ball.x,ball.y,wl.x1,wl.y1,wl.x2,wl.y2);
-      let nx=ball.x-c.x, ny=ball.y-c.y, d=Math.hypot(nx,ny);
-      if(d<ball.r && d>0.0001){ nx/=d; ny/=d;
-        ball.x=c.x+nx*ball.r; ball.y=c.y+ny*ball.r;
-        const before=Math.hypot(ball.vx,ball.vy);
-        reflect(ball,nx,ny,0.62*wl.k);
-        if(before>1.4)SFX.wall();
-      }
-    }
-    // bumpers
-    for(const bp of bumpers){
-      let nx=ball.x-bp.x, ny=ball.y-bp.y, d=Math.hypot(nx,ny);
-      if(d<bp.r+ball.r && d>0.0001){ nx/=d; ny/=d;
-        ball.x=bp.x+nx*(bp.r+ball.r); ball.y=bp.y+ny*(bp.r+ball.r);
-        reflect(ball,nx,ny,0.5);
-        ball.vx+=nx*9; ball.vy+=ny*9;            // active kick
-        bp.flash=1; shake=Math.max(shake,6);
-        combo++; const pts=100*Math.min(8,combo);
-        addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
-      }
-    }
-    // flippers swept in small steps so a fast swing can't pass through the ball
+    // flippers swept once per substep (shared by all balls)
     flipStep(lFlip, leftHeld?REST-SWING:REST);
     flipStep(rFlip, rightHeld?REST-SWING:REST);
-    flipperCollide(lFlip,LP,1,leftHeld);
-    flipperCollide(rFlip,RP,-1,rightHeld);
 
-    // drain
-    if(ball.y>H+24){ ball=null; loseBall(); return; }
+    for(let bi=BALLS.length-1; bi>=0; bi--){
+      const bl=BALLS[bi];
+      bl.x+=bl.vx/SUB; bl.y+=bl.vy/SUB;
+
+      // lane keeps ball on right until it clears the top, then opens to field
+      if(bl.inLane){
+        if(bl.x<laneX+bl.r && bl.y>205){ bl.x=laneX+bl.r; if(bl.vx<0)bl.vx*=-0.3; }
+        if(bl.x>W-b-bl.r){ bl.x=W-b-bl.r; bl.vx*=-0.4; }
+        if(bl.y<205) bl.inLane=false;
+      } else if(bl.x>laneX-bl.r && bl.y<232 && bl.vx>=0){
+        // one-way gate: once in play, the ball can't drop back into the plunger lane
+        bl.x=laneX-bl.r; bl.vx=-Math.abs(bl.vx)*0.4-0.6;
+      }
+
+      // walls
+      for(const wl of walls){
+        const c=closest(bl.x,bl.y,wl.x1,wl.y1,wl.x2,wl.y2);
+        let nx=bl.x-c.x, ny=bl.y-c.y, d=Math.hypot(nx,ny);
+        if(d<bl.r && d>0.0001){ nx/=d; ny/=d;
+          bl.x=c.x+nx*bl.r; bl.y=c.y+ny*bl.r;
+          const before=Math.hypot(bl.vx,bl.vy);
+          reflect(bl,nx,ny,0.62*wl.k);
+          if(before>1.4)SFX.wall();
+        }
+      }
+
+      // drop targets (only collide while standing)
+      for(const tg of targets){
+        if(tg.down) continue;
+        const c=closest(bl.x,bl.y,tg.x,tg.y-TGT_LEN/2,tg.x,tg.y+TGT_LEN/2);
+        let nx=bl.x-c.x, ny=bl.y-c.y, d=Math.hypot(nx,ny);
+        const R=bl.r+7;
+        if(d<R && d>0.0001){ nx/=d; ny/=d;
+          bl.x=c.x+nx*R; bl.y=c.y+ny*R;
+          reflect(bl,nx,ny,0.5);
+          tg.down=true; tg.flash=1;
+          shake=Math.max(shake,7);
+          const pts=500*scoreMult;
+          addScore(pts); popAt(tg.x,tg.y,'+'+pts); SFX.target();
+          burst(tg.x,tg.y,'#ffd24a',10);
+          if(mission && mission.def.desc.indexOf('TARGET')>=0) mission.prog++;
+          if(bankDown(tg.side)){
+            const side=tg.side;
+            setTimeout(()=>resetBank(side),700);
+            addScore(2000*scoreMult); popAt(tg.x,tg.y-30,'+'+(2000*scoreMult));
+            burst(tg.x,tg.y,'#5aa0ff',22);
+            lightLetter(side);
+          }
+        }
+      }
+
+      // bumpers
+      for(const bp of bumpers){
+        let nx=bl.x-bp.x, ny=bl.y-bp.y, d=Math.hypot(nx,ny);
+        if(d<bp.r+bl.r && d>0.0001){ nx/=d; ny/=d;
+          bl.x=bp.x+nx*(bp.r+bl.r); bl.y=bp.y+ny*(bp.r+bl.r);
+          reflect(bl,nx,ny,0.5);
+          bl.vx+=nx*9; bl.vy+=ny*9;            // active kick
+          bp.flash=1; shake=Math.max(shake,6);
+          combo++; const pts=100*Math.min(8,combo)*scoreMult;
+          addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
+          burst(bp.x,bp.y,'#7fc4ff',6);
+          if(mission && mission.def.desc.indexOf('BUMPER')>=0) mission.prog++;
+        }
+      }
+
+      flipperCollide(bl,lFlip,LP,1,leftHeld);
+      flipperCollide(bl,rFlip,RP,-1,rightHeld);
+
+      // drain
+      if(bl.y>H+24){
+        BALLS.splice(bi,1);
+        if(BALLS.length===0){ loseBall(); return; }
+        else { SFX.wall(); flash('BALL DRAINED'); }   // multiball: lose one, keep playing
+      }
+    }
   }
-  ball.age++;
+  BALLS.forEach(bl=>bl.age++);
+  // mission timer
+  if(mission){
+    mission.timer--;
+    if(mission.prog>=mission.def.goal){ completeMission(); }
+    else if(mission.timer<=0){ mission=null; scoreMult=multiball?2:1; flash('MISSION FAILED'); }
+  }
 }
 
-function flipperCollide(f,p,side,held){
+function flipperCollide(bl,f,p,side,held){
   const tip=flipTip(f,p,side);
-  const c=closest(ball.x,ball.y,p.x,p.y,tip.x,tip.y);
-  let nx=ball.x-c.x, ny=ball.y-c.y, d=Math.hypot(nx,ny);
-  const R=ball.r+FTHICK;
+  const c=closest(bl.x,bl.y,p.x,p.y,tip.x,tip.y);
+  let nx=bl.x-c.x, ny=bl.y-c.y, d=Math.hypot(nx,ny);
+  const R=bl.r+FTHICK;
   if(d<R && d>0.0001){ nx/=d; ny/=d;
-    ball.x=c.x+nx*R; ball.y=c.y+ny*R;
+    bl.x=c.x+nx*R; bl.y=c.y+ny*R;
     if(Math.abs(f.av)>0.02){               // actively flipping -> clean, predictable launch
       const r=Math.hypot(c.x-p.x,c.y-p.y);
       const power = 17 + 16*Math.min(1, r/FLEN);   // stronger the further out the ball sits
-      ball.x=c.x+nx*(R+2); ball.y=c.y+ny*(R+2);     // pop off the surface so it can't cling
-      ball.vx = side*0.24*power;            // only a hint toward center (~13 deg from vertical)
-      ball.vy = -0.97*power;                // strongly up
+      bl.x=c.x+nx*(R+2); bl.y=c.y+ny*(R+2);     // pop off the surface so it can't cling
+      bl.vx = side*0.24*power;            // only a hint toward center (~13 deg from vertical)
+      bl.vy = -0.97*power;                // strongly up
     } else {                                // resting/sliding on the bat -> lively, not sticky
-      reflect(ball,nx,ny,0.34);             // real bounce off the bat rubber
-      const vn=ball.vx*nx+ball.vy*ny;       // only cancel the very faintest jitter so it can still settle
-      if(vn>0 && vn<0.6){ ball.vx-=vn*nx; ball.vy-=vn*ny; }
+      reflect(bl,nx,ny,0.34);             // real bounce off the bat rubber
+      const vn=bl.vx*nx+bl.vy*ny;       // only cancel the very faintest jitter so it can still settle
+      if(vn>0 && vn<0.6){ bl.vx-=vn*nx; bl.vy-=vn*ny; }
     }
   }
 }
@@ -235,15 +365,20 @@ function update(){
   }
   if(state==='serve'){ updateFlippers(); }   // visual sweep before launch
   if(state==='play'){ physics();
-    // safety net: if the ball lingers low in the plunger lane, auto-relaunch (never get stuck)
-    if(ball && ball.x>laneX-2 && ball.y>620 && ball.vy>-2){
-      ball.stall=(ball.stall||0)+1;
-      if(ball.stall>40){ ball.vy=-30; ball.vx=-1.4; ball.inLane=true; ball.stall=0; SFX.launch(); }
-    } else if(ball){ ball.stall=0; }
+    // safety net: if a ball lingers low in the plunger lane, auto-relaunch (never get stuck)
+    BALLS.forEach(bl=>{
+      if(bl.x>laneX-2 && bl.y>620 && bl.vy>-2){
+        bl.stall=(bl.stall||0)+1;
+        if(bl.stall>40){ bl.vy=-30; bl.vx=-1.4; bl.inLane=true; bl.stall=0; SFX.launch(); }
+      } else { bl.stall=0; }
+    });
   }
   if(shake>0)shake-=0.7;
   if(flashT>0)flashT-=16;
   bumpers.forEach(bp=>{ if(bp.flash>0)bp.flash-=0.08; });
+  targets.forEach(t=>{ if(t.flash>0)t.flash-=0.06; });
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.vx*=0.96; p.vy*=0.96; p.life-=0.03; });
+  particles=particles.filter(p=>p.life>0);
   pops.forEach(p=>{p.life+=16;p.y-=0.6;}); pops=pops.filter(p=>p.life<900);
 }
 
@@ -300,23 +435,86 @@ function drawFlipper(f,p,side){
   ctx.fillStyle='#1a2238'; ctx.beginPath(); ctx.arc(p.x,p.y,8,0,7); ctx.fill();
   ctx.strokeStyle='#5aa0ff'; ctx.lineWidth=2; ctx.stroke();
 }
-function drawBall(){
-  if(!ball)return;
+function drawOneBall(bl){
   ctx.save();
-  ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(ball.x,ball.y+ball.r*0.8,ball.r*0.9,ball.r*0.4,0,0,7); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(bl.x,bl.y+bl.r*0.8,bl.r*0.9,bl.r*0.4,0,0,7); ctx.fill();
   const img=IMG.ball;
-  if(img&&img.complete){ ctx.shadowColor='rgba(150,200,255,0.5)'; ctx.shadowBlur=10; ctx.drawImage(img,ball.x-ball.r-2,ball.y-ball.r-2,(ball.r+2)*2,(ball.r+2)*2); }
-  else { ctx.fillStyle='#cfd6dd'; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,7); ctx.fill(); }
+  if(img&&img.complete){ ctx.shadowColor='rgba(150,200,255,0.5)'; ctx.shadowBlur=10; ctx.drawImage(img,bl.x-bl.r-2,bl.y-bl.r-2,(bl.r+2)*2,(bl.r+2)*2); }
+  else { ctx.fillStyle='#cfd6dd'; ctx.beginPath(); ctx.arc(bl.x,bl.y,bl.r,0,7); ctx.fill(); }
   ctx.restore();
+}
+function drawBall(){
+  BALLS.forEach(drawOneBall);
+  if(ball) drawOneBall(ball);      // the ball waiting on the plunger
+}
+function drawTargets(){
+  targets.forEach(t=>{
+    const h=TGT_LEN, w=11;
+    ctx.save();
+    if(t.down){
+      ctx.globalAlpha=0.25; ctx.fillStyle='#2a3a58';
+      rr(t.x-w/2,t.y-h/2+h*0.35,w,h*0.3,3); ctx.fill();
+    } else {
+      const f=Math.max(0,t.flash);
+      ctx.shadowColor='rgba(255,210,74,'+(0.4+0.6*f)+')'; ctx.shadowBlur=10+20*f;
+      ctx.fillStyle=f>0?'#ffe89a':'#d6443a';
+      rr(t.x-w/2,t.y-h/2,w,h,3); ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle='rgba(255,240,200,0.8)'; ctx.lineWidth=1.5;
+      rr(t.x-w/2,t.y-h/2,w,h,3); ctx.stroke();
+    }
+    ctx.restore();
+  });
+  ctx.globalAlpha=1;
+}
+function drawParticles(){
+  particles.forEach(p=>{
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,2.6,0,7); ctx.fill();
+  });
+  ctx.globalAlpha=1;
 }
 function drawHUD(){
   ctx.fillStyle='#cfe0ff'; ctx.font='bold 22px "Trebuchet MS"'; ctx.textAlign='left';
   ctx.fillText(score.toLocaleString(), b+2, 40);
   ctx.font='11px "Trebuchet MS"'; ctx.fillStyle='#5b6b8c'; ctx.fillText('SCORE',b+3,52);
   ctx.textAlign='right'; ctx.fillStyle='#d6443a'; ctx.font='bold 20px "Trebuchet MS"';
-  let bd=''; for(let i=0;i<balls;i++)bd+='●'; ctx.fillText(bd||'—',W-b-2,40);
+  let bd=''; for(let i=0;i<ballsLeft;i++)bd+='●'; ctx.fillText(bd||'—',W-b-2,40);
   ctx.fillStyle='#5b6b8c'; ctx.font='11px "Trebuchet MS"'; ctx.fillText('BALLS',W-b-3,52);
   ctx.textAlign='left';
+  // ---- N7 status: lit letters + multiplier ----
+  ctx.textAlign='center';
+  ctx.font='bold 19px "Trebuchet MS"';
+  ctx.fillStyle = lit.N ? '#ffd24a' : 'rgba(120,140,180,0.35)';
+  ctx.fillText('N', W/2-16, 42);
+  ctx.fillStyle = lit.seven ? '#ffd24a' : 'rgba(120,140,180,0.35)';
+  ctx.fillText('7', W/2+16, 42);
+  if(scoreMult>1){
+    ctx.fillStyle='#7fffcf'; ctx.font='bold 14px "Trebuchet MS"';
+    ctx.fillText('x'+scoreMult, W/2, 60);
+  }
+  if(multiball){
+    ctx.fillStyle='#ff8a7a'; ctx.font='bold 12px "Trebuchet MS"';
+    ctx.fillText('MULTIBALL', W/2, 74);
+  }
+
+  // ---- active mission banner ----
+  if(mission){
+    const my=96;
+    ctx.fillStyle='rgba(4,8,18,0.72)'; rr(W/2-150,my-20,300,44,8); ctx.fill();
+    ctx.strokeStyle='rgba(214,68,58,0.8)'; ctx.lineWidth=2; rr(W/2-150,my-20,300,44,8); ctx.stroke();
+    ctx.fillStyle='#ff8a7a'; ctx.font='bold 15px "Trebuchet MS"';
+    ctx.fillText(mission.def.name, W/2, my-2);
+    ctx.fillStyle='#9fb4d8'; ctx.font='12px "Trebuchet MS"';
+    ctx.fillText(mission.def.desc+'   '+mission.prog+'/'+mission.def.goal, W/2, my+16);
+    // timer bar
+    const tw=280*(mission.timer/1500);
+    ctx.fillStyle='rgba(255,255,255,0.12)'; rr(W/2-140,my+22,280,4,2); ctx.fill();
+    ctx.fillStyle='#ffd24a'; rr(W/2-140,my+22,Math.max(0,tw),4,2); ctx.fill();
+  }
+  ctx.textAlign='left';
+
   if(flashT>0){ ctx.globalAlpha=Math.min(1,flashT/500); ctx.textAlign='center';
     ctx.fillStyle='#ffd24a'; ctx.font='bold 30px "Trebuchet MS"'; ctx.fillText(flashMsg,W/2,H*0.4);
     ctx.textAlign='left'; ctx.globalAlpha=1; }
@@ -348,14 +546,14 @@ function draw(){
   const sh=shake>0?(Math.random()-0.5)*shake:0;
   ctx.clearRect(0,0,W,H);
   ctx.save(); ctx.translate(sh,sh*0.5);
-  drawTable(); drawBumpers();
+  drawTable(); drawTargets(); drawBumpers();
   drawFlipper(lFlip,LP,1); drawFlipper(rFlip,RP,-1);
-  drawBall(); drawServe(); drawHUD();
+  drawBall(); drawParticles(); drawServe(); drawHUD();
   ctx.restore();
-  if(state==='title') overlay('PINBALL','Tap to launch · sides flip');
+  if(state==='title') overlay('PINBALL','Drop the N7 targets · light missions');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v11', 6, H-8);
+  ctx.fillText('v12', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
