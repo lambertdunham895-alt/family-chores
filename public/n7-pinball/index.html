@@ -236,6 +236,7 @@ function physics(){
 
     for(let bi=BALLS.length-1; bi>=0; bi--){
       const bl=BALLS[bi];
+      if(bl.bumpCool>0) bl.bumpCool--;
       bl.x+=bl.vx/SUB; bl.y+=bl.vy/SUB;
 
       // lane keeps ball on right until it clears the top, then opens to field
@@ -267,8 +268,10 @@ function physics(){
         let nx=bl.x-c.x, ny=bl.y-c.y, d=Math.hypot(nx,ny);
         const R=bl.r+7;
         if(d<R && d>0.0001){ nx/=d; ny/=d;
-          bl.x=c.x+nx*R; bl.y=c.y+ny*R;
+          bl.x=c.x+nx*(R+2); bl.y=c.y+ny*(R+2);
           reflect(bl,nx,ny,0.5);
+          { const vn=bl.vx*nx+bl.vy*ny, MINOUT=4;
+            if(vn<MINOUT){ const add=MINOUT-vn; bl.vx+=nx*add; bl.vy+=ny*add; } }
           tg.down=true; tg.flash=1;
           shake=Math.max(shake,7);
           const pts=500*scoreMult;
@@ -289,14 +292,22 @@ function physics(){
       for(const bp of bumpers){
         let nx=bl.x-bp.x, ny=bl.y-bp.y, d=Math.hypot(nx,ny);
         if(d<bp.r+bl.r && d>0.0001){ nx/=d; ny/=d;
-          bl.x=bp.x+nx*(bp.r+bl.r); bl.y=bp.y+ny*(bp.r+bl.r);
+          // pop clear of the surface (not exactly touching) so it can't re-collide next step
+          bl.x=bp.x+nx*(bp.r+bl.r+2.5); bl.y=bp.y+ny*(bp.r+bl.r+2.5);
           reflect(bl,nx,ny,0.5);
           bl.vx+=nx*9; bl.vy+=ny*9;            // active kick
-          bp.flash=1; shake=Math.max(shake,6);
-          combo++; const pts=100*Math.min(8,combo)*scoreMult;
-          addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
-          burst(bp.x,bp.y,'#7fc4ff',6);
-          if(mission && mission.def.desc.indexOf('BUMPER')>=0) mission.prog++;
+          // guarantee it actually leaves: enforce a minimum outward (radial) speed
+          const vn=bl.vx*nx+bl.vy*ny, MINOUT=8;
+          if(vn<MINOUT){ const add=MINOUT-vn; bl.vx+=nx*add; bl.vy+=ny*add; }
+          // brief cooldown stops one graze from scoring several times across substeps
+          if((bl.bumpCool||0)<=0){
+            bp.flash=1; shake=Math.max(shake,6);
+            combo++; const pts=100*Math.min(8,combo)*scoreMult;
+            addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
+            burst(bp.x,bp.y,'#7fc4ff',6);
+            if(mission && mission.def.desc.indexOf('BUMPER')>=0) mission.prog++;
+          }
+          bl.bumpCool=3;
         }
       }
 
@@ -553,7 +564,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Drop the N7 targets · light missions');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v12', 6, H-8);
+  ctx.fillText('v13', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
