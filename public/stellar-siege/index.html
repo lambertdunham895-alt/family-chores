@@ -729,8 +729,13 @@
       for (let yy = y - bh; yy < H; yy += bh) {
         ctx.drawImage(bgImg, 0, yy, bw, bh);
       }
-      // slight darkening so sprites/HUD stay readable
-      ctx.fillStyle = 'rgba(5,8,20,0.35)';
+      // Gradient veil: darker at the top (enemies stay readable),
+      // nearly clear at the bottom (nebula shines where the ship flies).
+      const veil = ctx.createLinearGradient(0, 0, 0, H);
+      veil.addColorStop(0, 'rgba(5,8,20,0.42)');
+      veil.addColorStop(0.45, 'rgba(5,8,20,0.18)');
+      veil.addColorStop(1, 'rgba(5,8,20,0.05)');
+      ctx.fillStyle = veil;
       ctx.fillRect(0, 0, W, H);
     }
 
