@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="cv" width="560" height="980"></canvas></div>
-<div id="hint">LEFT / RIGHT side = flippers &nbsp;·&nbsp; HOLD = launch</div>
+<div id="hint">SIDES = flippers &nbsp;·&nbsp; HOLD = launch &nbsp;·&nbsp; Z / C = nudge</div>
 <script>
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 const DPR=Math.min(2,window.devicePixelRatio||1);
@@ -70,7 +70,16 @@ const SFX={
   bank:()=>{[660,880,1100].forEach((f,i)=>setTimeout(()=>blip(f,0.18,'triangle',0.2),i*70));},
   mission:()=>{[220,330,440,550,660,880].forEach((f,i)=>setTimeout(()=>blip(f,0.28,'sawtooth',0.16),i*80));},
   jackpot:()=>{[880,1100,1320,1760].forEach((f,i)=>setTimeout(()=>blip(f,0.35,'square',0.2),i*90));},
-  multiball:()=>{[165,220,330,440,550,660,880,1100].forEach((f,i)=>setTimeout(()=>blip(f,0.25,'triangle',0.2),i*70));}
+  multiball:()=>{[165,220,330,440,550,660,880,1100].forEach((f,i)=>setTimeout(()=>blip(f,0.25,'triangle',0.2),i*70));},
+  combo:(n)=>blip(440+n*90,0.09,'square',0.16),
+  kickback:()=>{blip(120,0.18,'sawtooth',0.22); setTimeout(()=>blip(600,0.2,'square',0.18),60);},
+  skill:()=>{[880,1320,1760].forEach((f,i)=>setTimeout(()=>blip(f,0.16,'sine',0.2),i*70));},
+  save:()=>{[300,500,760].forEach((f,i)=>setTimeout(()=>blip(f,0.16,'triangle',0.18),i*60));},
+  extra:()=>{[523,659,784,1047,1319].forEach((f,i)=>setTimeout(()=>blip(f,0.3,'square',0.2),i*100));},
+  spin:(v)=>blip(300+v*260,0.05,'square',0.08),
+  loop:(n)=>{blip(500+n*120,0.14,'sine',0.18); blip(750+n*120,0.1,'triangle',0.12);},
+  tick:()=>blip(1200,0.03,'square',0.10),
+  tilt:()=>{[200,150,110].forEach((f,i)=>setTimeout(()=>blip(f,0.4,'sawtooth',0.24),i*130));}
 };
 
 // ---------- state ----------
@@ -110,18 +119,71 @@ let missionIdx=0;
 let multiball=false;
 let scoreMult=1;
 
-function newBall(){ ball={x:serve.x,y:serve.y,vx:0,vy:0,r:13,inLane:true,age:0}; BALLS=[]; plunger=0; state='serve'; }
+// --- new systems ---
+let ballSave=0;            // frames of ball-save protection remaining
+let kickbackReady=true;    // left outlane kickback armed?
+let skillLit=false;        // skill shot available on this launch
+let skillWindow=0;         // frames left to collect the skill shot
+let bonusPts=0;            // end-of-ball bonus accumulator
+let bonusTally=null;       // {shown, target, timer} during the count-up
+let comboChain=0, comboTimer=0;   // quick-succession hit chaining
+let tilt=0, tiltWarn=0, tilted=false;  // nudge/tilt system
+let loopCount=0, loopTimer=0;     // orbit loop combos
+let screenFlash=0;         // white flash on big events
+let extraAwarded={};       // score thresholds already awarded an extra ball
+const EXTRA_AT=[75000,200000,400000];
+
+// spinner sits in the upper-left orbit path
+const spinner={x:96,y:300,r:26,spin:0,vel:0};
+// orbit sensors: crossing the top arc left->right (or back) counts as a loop
+const orbitZone={y1:190,y2:250};
+
+function newBall(){
+  ball={x:serve.x,y:serve.y,vx:0,vy:0,r:13,inLane:true,age:0}; BALLS=[]; plunger=0; state='serve';
+  kickbackReady=true; skillLit=true; tilt=0; tilted=false; comboChain=0;
+}
 function startGame(){
   initAudio(); SFX.start(); score=0; ballsLeft=3; combo=0;
   lit={N:false,seven:false}; mission=null; missionIdx=0; multiball=false; scoreMult=1;
   targets.forEach(t=>{t.down=false;t.flash=0;}); particles=[];
+  bonusPts=0; bonusTally=null; extraAwarded={}; loopCount=0;
   newBall(); state='serve'; flashMsg='';
+}
+function awardBonus(){
+  // end-of-ball bonus tally: satisfying count-up
+  if(bonusPts>0){ bonusTally={shown:0,target:bonusPts,timer:0}; }
+  bonusPts=0;
 }
 function loseBall(){
   SFX.drain(); ballsLeft--; shake=14; combo=0;
-  multiball=false; scoreMult=1; mission=null;
+  multiball=false; scoreMult=1; mission=null; comboChain=0;
+  awardBonus();
   if(ballsLeft<=0){ best=Math.max(best,score); state='over'; SFX.over(); }
   else { flash('BALL LOST'); newBall(); }
+}
+function checkExtraBall(){
+  for(const th of EXTRA_AT){
+    if(score>=th && !extraAwarded[th]){
+      extraAwarded[th]=true; ballsLeft++;
+      SFX.extra(); flash('EXTRA BALL!'); screenFlash=1; shake=Math.max(shake,12);
+      burst(W/2,H*0.5,'#7fffcf',36);
+    }
+  }
+}
+function addCombo(x,y){
+  comboChain++; comboTimer=110;             // ~1.8s window to keep the chain alive
+  if(comboChain>=3){
+    const pts=250*comboChain*scoreMult;
+    addScore(pts); popAt(x,y-24,'COMBO x'+comboChain);
+    SFX.combo(Math.min(12,comboChain));
+    if(comboChain%5===0){ flash('COMBO x'+comboChain+'!'); screenFlash=0.6; }
+  }
+}
+function doKickback(bl){
+  kickbackReady=false;
+  bl.x=60; bl.y=H-140; bl.vx=1.2; bl.vy=-30;
+  SFX.kickback(); flash('KICKBACK!'); shake=Math.max(shake,10);
+  burst(60,H-140,'#7fc4ff',20);
 }
 function flash(m){ flashMsg=m; flashT=1400; }
 
@@ -183,13 +245,32 @@ function up(id){ const was=pointers.get(id); pointers.delete(id);
   refreshFlips();
 }
 function launch(){ if(state!=='serve'||!ball)return;
-  ball.vy=-(28+plunger*8); ball.vx=-(1.0+plunger*2.0); ball.inLane=true; plunger=0; plungerHeld=false;
+  // SKILL SHOT: release in the sweet spot (0.62-0.78 power) for a bonus
+  const p=plunger;
+  ball.vy=-(28+p*8); ball.vx=-(1.0+p*2.0); ball.inLane=true; plunger=0; plungerHeld=false;
   BALLS=[ball]; ball=null;
-  state='play'; SFX.launch(); }
+  state='play'; SFX.launch();
+  ballSave=360;                    // ~6s of ball-save protection
+  skillWindow= (p>=0.62 && p<=0.78) ? 150 : 0;   // window to collect the skill award
+  if(skillWindow>0){ flash('SKILL SHOT LIT'); }
+}
 cv.addEventListener('pointerdown',e=>{e.preventDefault(); initAudio(); down(e.pointerId,e.clientX);});
 cv.addEventListener('pointerup',e=>{e.preventDefault(); up(e.pointerId);});
 cv.addEventListener('pointercancel',e=>up(e.pointerId));
+function nudge(dir){
+  if(state!=='play'||tilted) return;
+  BALLS.forEach(bl=>{ bl.vx+=dir*3.2; bl.vy-=1.2; });
+  shake=Math.max(shake,7);
+  tilt+=0.34;
+  if(tilt>1){
+    tilted=true; SFX.tilt(); flash('TILT!'); shake=20;
+    // tilt kills the ball: flippers go dead, ball drains
+    BALLS.forEach(bl=>{ bl.vy=Math.abs(bl.vy)+8; });
+  } else if(tilt>0.66){ flash('CAREFUL...'); }
+}
 window.addEventListener('keydown',e=>{
+  if(e.key==='z'||e.key==='Z'){ nudge(-1); }
+  if(e.key==='c'||e.key==='C'){ nudge(1); }
   if(e.repeat)return; initAudio();
   if(['ArrowLeft','a','A','z','Z'].includes(e.key)){leftHeld=true;if(state==='play')SFX.flip();}
   if(['ArrowRight','d','D','/','x','X'].includes(e.key)){rightHeld=true;if(state==='play')SFX.flip();}
@@ -230,9 +311,9 @@ function physics(){
     if(sp>MAX){ bl.vx*=MAX/sp; bl.vy*=MAX/sp; }
   }
   for(let s=0;s<SUB;s++){
-    // flippers swept once per substep (shared by all balls)
-    flipStep(lFlip, leftHeld?REST-SWING:REST);
-    flipStep(rFlip, rightHeld?REST-SWING:REST);
+    // flippers swept once per substep (shared by all balls); dead while tilted
+    flipStep(lFlip, (leftHeld&&!tilted)?REST-SWING:REST);
+    flipStep(rFlip, (rightHeld&&!tilted)?REST-SWING:REST);
 
     for(let bi=BALLS.length-1; bi>=0; bi--){
       const bl=BALLS[bi];
@@ -277,6 +358,9 @@ function physics(){
           const pts=500*scoreMult;
           addScore(pts); popAt(tg.x,tg.y,'+'+pts); SFX.target();
           burst(tg.x,tg.y,'#ffd24a',10);
+          addCombo(tg.x,tg.y); bonusPts+=1000;
+          if(skillWindow>0){ skillWindow=0; const sp=5000*scoreMult; addScore(sp);
+            SFX.skill(); flash('SKILL SHOT  +'+sp.toLocaleString()); screenFlash=0.8; }
           if(mission && mission.def.desc.indexOf('TARGET')>=0) mission.prog++;
           if(bankDown(tg.side)){
             const side=tg.side;
@@ -305,6 +389,9 @@ function physics(){
             combo++; const pts=100*Math.min(8,combo)*scoreMult;
             addScore(pts); popAt(bp.x,bp.y,'+'+pts); SFX.bump();
             burst(bp.x,bp.y,'#7fc4ff',6);
+            addCombo(bp.x,bp.y); bonusPts+=250;
+            if(skillWindow>0){ skillWindow=0; const sp=5000*scoreMult; addScore(sp);
+              SFX.skill(); flash('SKILL SHOT  +'+sp.toLocaleString()); screenFlash=0.8; }
             if(mission && mission.def.desc.indexOf('BUMPER')>=0) mission.prog++;
           }
           bl.bumpCool=3;
@@ -314,11 +401,57 @@ function physics(){
       flipperCollide(bl,lFlip,LP,1,leftHeld);
       flipperCollide(bl,rFlip,RP,-1,rightHeld);
 
+      // ---- SPINNER: rips when the ball passes through ----
+      {
+        const dsx=bl.x-spinner.x, dsy=bl.y-spinner.y;
+        if(Math.hypot(dsx,dsy)<spinner.r+bl.r){
+          const sp=Math.hypot(bl.vx,bl.vy);
+          if(sp>2 && (bl.spinCool||0)<=0){
+            spinner.vel=Math.min(1,sp/22);
+            const pts=Math.round(120*spinner.vel*10)*scoreMult;
+            addScore(pts); bonusPts+=200;
+            SFX.spin(spinner.vel);
+            popAt(spinner.x,spinner.y-18,'+'+pts);
+            bl.spinCool=8;
+          }
+        }
+        if(bl.spinCool>0) bl.spinCool--;
+      }
+
+      // ---- ORBIT LOOPS: cross the top arc side to side ----
+      if(bl.y>orbitZone.y1 && bl.y<orbitZone.y2 && Math.abs(bl.vx)>4){
+        const side = bl.vx>0 ? 'R' : 'L';
+        if(bl.lastOrbit && bl.lastOrbit!==side && (bl.orbitCool||0)<=0){
+          loopCount++; loopTimer=180;
+          const pts=1500*Math.min(6,loopCount)*scoreMult;
+          addScore(pts); bonusPts+=500;
+          SFX.loop(Math.min(6,loopCount));
+          popAt(bl.x,bl.y,'LOOP x'+loopCount+'  +'+pts);
+          burst(bl.x,bl.y,'#7fffcf',10);
+          if(loopCount===3){ flash('LOOP MASTER!'); screenFlash=0.6; }
+          bl.orbitCool=30;
+        }
+        bl.lastOrbit=side;
+      }
+      if(bl.orbitCool>0) bl.orbitCool--;
+
+      // ---- LEFT OUTLANE KICKBACK ----
+      if(kickbackReady && bl.x<105 && bl.y>H-190 && bl.vy>0){
+        doKickback(bl);
+      }
+
       // drain
       if(bl.y>H+24){
-        BALLS.splice(bi,1);
-        if(BALLS.length===0){ loseBall(); return; }
-        else { SFX.wall(); flash('BALL DRAINED'); }   // multiball: lose one, keep playing
+        if(ballSave>0 && BALLS.length===1){
+          // BALL SAVE: put it right back into play
+          bl.x=serve.x; bl.y=serve.y; bl.vx=-1.2; bl.vy=-30; bl.inLane=true;
+          ballSave=Math.min(ballSave,120);
+          SFX.save(); flash('BALL SAVED'); burst(serve.x,serve.y,'#7fffcf',18);
+        } else {
+          BALLS.splice(bi,1);
+          if(BALLS.length===0){ loseBall(); return; }
+          else { SFX.wall(); flash('BALL DRAINED'); }   // multiball: lose one, keep playing
+        }
       }
     }
   }
@@ -386,6 +519,24 @@ function update(){
   }
   if(shake>0)shake-=0.7;
   if(flashT>0)flashT-=16;
+  if(screenFlash>0)screenFlash-=0.06;
+  if(ballSave>0){ ballSave--; if(ballSave===0 && state==='play') flash('SAVE OVER'); }
+  if(skillWindow>0) skillWindow--;
+  if(comboTimer>0){ comboTimer--; if(comboTimer===0) comboChain=0; }
+  if(loopTimer>0){ loopTimer--; if(loopTimer===0) loopCount=0; }
+  if(tilt>0) tilt-=0.012;
+  // spinner spin-down
+  if(spinner.vel>0){ spinner.spin+=spinner.vel*0.9; spinner.vel*=0.965; if(spinner.vel<0.01)spinner.vel=0; }
+  // end-of-ball bonus count-up
+  if(bonusTally){
+    bonusTally.timer++;
+    const step=Math.max(250,Math.round(bonusTally.target/40));
+    if(bonusTally.shown<bonusTally.target){
+      bonusTally.shown=Math.min(bonusTally.target,bonusTally.shown+step);
+      score+=step; if(score>0 && bonusTally.timer%2===0) SFX.tick();
+    } else if(bonusTally.timer>90){ bonusTally=null; checkExtraBall(); }
+  }
+  checkExtraBall();
   bumpers.forEach(bp=>{ if(bp.flash>0)bp.flash-=0.08; });
   targets.forEach(t=>{ if(t.flash>0)t.flash-=0.06; });
   particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.vx*=0.96; p.vy*=0.96; p.life-=0.03; });
@@ -478,6 +629,35 @@ function drawTargets(){
   });
   ctx.globalAlpha=1;
 }
+function drawSpinner(){
+  ctx.save();
+  ctx.translate(spinner.x,spinner.y);
+  const glow=Math.min(1,spinner.vel*2);
+  ctx.shadowColor='rgba(127,255,207,'+(0.3+0.7*glow)+')'; ctx.shadowBlur=10+26*glow;
+  ctx.rotate(spinner.spin);
+  ctx.fillStyle=glow>0.05?'#7fffcf':'#3d6a8a';
+  for(let i=0;i<3;i++){
+    ctx.rotate(Math.PI*2/3);
+    rr(-3,-spinner.r*0.85,6,spinner.r*1.7,3); ctx.fill();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle='rgba(127,255,207,0.35)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(spinner.x,spinner.y,spinner.r,0,7); ctx.stroke();
+  ctx.restore();
+}
+function drawKickbackLamp(){
+  const x=52,y=H-176;
+  ctx.save();
+  ctx.shadowColor=kickbackReady?'rgba(127,196,255,0.9)':'rgba(60,70,90,0.4)';
+  ctx.shadowBlur=kickbackReady?16:0;
+  ctx.fillStyle=kickbackReady?'#7fc4ff':'rgba(70,84,110,0.5)';
+  ctx.beginPath(); ctx.arc(x,y,7,0,7); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle=kickbackReady?'#7fc4ff':'rgba(90,107,140,0.6)';
+  ctx.font='bold 9px "Trebuchet MS"'; ctx.textAlign='center';
+  ctx.fillText('KICK',x,y+20); ctx.textAlign='left';
+}
 function drawParticles(){
   particles.forEach(p=>{
     ctx.globalAlpha=Math.max(0,p.life);
@@ -508,6 +688,45 @@ function drawHUD(){
   if(multiball){
     ctx.fillStyle='#ff8a7a'; ctx.font='bold 12px "Trebuchet MS"';
     ctx.fillText('MULTIBALL', W/2, 74);
+  }
+
+  // ---- ball save / skill / combo / loop indicators ----
+  let sy=92;
+  if(ballSave>0){
+    ctx.fillStyle='#7fffcf'; ctx.font='bold 13px "Trebuchet MS"';
+    ctx.fillText('BALL SAVE  '+Math.ceil(ballSave/60)+'s', W/2, sy); sy+=18;
+  }
+  if(skillWindow>0){
+    ctx.fillStyle='#ffd24a'; ctx.font='bold 13px "Trebuchet MS"';
+    ctx.fillText('SKILL SHOT LIT', W/2, sy); sy+=18;
+  }
+  if(comboChain>=3){
+    ctx.fillStyle='#ff8a7a'; ctx.font='bold 15px "Trebuchet MS"';
+    ctx.fillText('COMBO x'+comboChain, W/2, sy); sy+=18;
+  }
+  if(loopCount>0){
+    ctx.fillStyle='#7fffcf'; ctx.font='bold 13px "Trebuchet MS"';
+    ctx.fillText('LOOP x'+loopCount, W/2, sy); sy+=18;
+  }
+
+  // ---- tilt meter (bottom-left) ----
+  if(tilt>0.05){
+    const tw=70;
+    ctx.fillStyle='rgba(255,255,255,0.12)'; rr(b+2,H-30,tw,6,3); ctx.fill();
+    ctx.fillStyle= tilt>0.66?'#ff5a4a':'#ffd24a'; rr(b+2,H-30,tw*Math.min(1,tilt),6,3); ctx.fill();
+    ctx.fillStyle='#7e90b4'; ctx.font='9px "Trebuchet MS"'; ctx.textAlign='left';
+    ctx.fillText('TILT',b+2,H-34);
+  }
+
+  // ---- end-of-ball bonus tally ----
+  if(bonusTally){
+    ctx.textAlign='center';
+    ctx.fillStyle='rgba(4,8,18,0.85)'; rr(W/2-130,H*0.44-40,260,86,10); ctx.fill();
+    ctx.strokeStyle='rgba(255,210,74,0.8)'; ctx.lineWidth=2; rr(W/2-130,H*0.44-40,260,86,10); ctx.stroke();
+    ctx.fillStyle='#ffd24a'; ctx.font='bold 18px "Trebuchet MS"';
+    ctx.fillText('BONUS', W/2, H*0.44-14);
+    ctx.fillStyle='#e8eefc'; ctx.font='bold 30px "Trebuchet MS"';
+    ctx.fillText(bonusTally.shown.toLocaleString(), W/2, H*0.44+22);
   }
 
   // ---- active mission banner ----
@@ -557,14 +776,18 @@ function draw(){
   const sh=shake>0?(Math.random()-0.5)*shake:0;
   ctx.clearRect(0,0,W,H);
   ctx.save(); ctx.translate(sh,sh*0.5);
-  drawTable(); drawTargets(); drawBumpers();
+  drawTable(); drawTargets(); drawSpinner(); drawBumpers(); drawKickbackLamp();
   drawFlipper(lFlip,LP,1); drawFlipper(rFlip,RP,-1);
   drawBall(); drawParticles(); drawServe(); drawHUD();
   ctx.restore();
-  if(state==='title') overlay('PINBALL','Drop the N7 targets · light missions');
+  if(screenFlash>0){ ctx.fillStyle='rgba(255,255,255,'+(screenFlash*0.5)+')'; ctx.fillRect(0,0,W,H); }
+  if(tilted){ ctx.fillStyle='rgba(120,0,0,0.30)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#ff5a4a'; ctx.font='bold 46px "Trebuchet MS"'; ctx.textAlign='center';
+    ctx.fillText('TILT',W/2,H*0.5); ctx.textAlign='left'; }
+  if(state==='title') overlay('PINBALL','Targets · missions · multiball · Z/C nudge');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v13', 6, H-8);
+  ctx.fillText('v14', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
