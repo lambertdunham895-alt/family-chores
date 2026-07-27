@@ -604,13 +604,43 @@
     ctx.restore();
   }
 
+  function drawEngineFlames(p, halfH, halfW) {
+    // Code-drawn blue thruster glow beneath the ship's 4 engines.
+    // Flicker via time + a little randomness so it feels alive.
+    const t = performance.now() / 1000;
+    const baseY = halfH * 0.72;                 // start near the tail
+    // four engine nozzles, mirrored pairs (as fractions of half-width)
+    const nozzles = [-0.52, -0.28, 0.28, 0.52];
+    nozzles.forEach((fx, idx) => {
+      const x = fx * halfW * 2;
+      const flick = 0.8 + Math.sin(t * 22 + idx * 1.7) * 0.12 + Math.random() * 0.08;
+      const len = halfH * (0.42 * flick);
+      const w = halfW * 0.14;
+      const grad = ctx.createLinearGradient(0, baseY, 0, baseY + len);
+      grad.addColorStop(0, 'rgba(220,245,255,0.95)');
+      grad.addColorStop(0.35, 'rgba(96,180,255,0.75)');
+      grad.addColorStop(1, 'rgba(40,120,255,0)');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';   // additive glow
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(x - w, baseY);
+      ctx.quadraticCurveTo(x, baseY + len * 0.5, x, baseY + len);
+      ctx.quadraticCurveTo(x, baseY + len * 0.5, x + w, baseY);
+      ctx.closePath();
+      ctx.fill();
+      // bright inner core
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.ellipse(x, baseY + 2, w * 0.4, len * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+  }
+
   function drawPlayer() {
     const p = s.player;
-    let poseKey;
-    if (p.hitFlash > 0) poseKey = 'hit';
-    else if (p.bank > 0.3) poseKey = 'bank_right';
-    else if (p.bank < -0.3) poseKey = 'bank_left';
-    else poseKey = Math.floor(p.animTimer / 0.15) % 2 === 0 ? 'thrust' : 'idle';
+    const poseKey = p.hitFlash > 0 ? 'hit' : 'idle';   // static ship, single pose
 
     const img = SHIP_IMAGES[poseKey];
     const drawH = 72;
@@ -621,6 +651,7 @@
     if (img && img.complete && img.naturalWidth) {
       const scale = drawH / img.naturalHeight;
       const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+      drawEngineFlames(p, h / 2, w / 2);           // flames behind the hull
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
     } else {
       ctx.fillStyle = '#e2e8f0';
