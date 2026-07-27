@@ -149,6 +149,9 @@
       player: { x: W / 2, y: H - 90, w: 26, h: 30, invuln: 0, hitFlash: 0, animTimer: 0, bank: 0 },
       deathFlashes: [],
       enemyBooms: [],
+      debris: [],
+      shockwaves: [],
+      shake: 0,
       keys: {},
       pointer: { x: W / 2, y: H - 90, active: false },
       bullets: [],
@@ -238,6 +241,39 @@
       const sp = Math.random() * 90 + 30;
       s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.5 + Math.random() * 0.3, maxLife: 0.8, color });
     }
+  }
+
+  function spawnDebris(s, x, y, color, count, power) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (Math.random() * 120 + 80) * power;
+      const size = Math.random() * 3 + 2;
+      s.debris.push({
+        x, y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        rot: Math.random() * Math.PI, vrot: (Math.random() - 0.5) * 14,
+        size, color,
+        life: 0.5 + Math.random() * 0.4, maxLife: 0.9,
+      });
+    }
+  }
+
+  function spawnShockwave(s, x, y, color, maxR) {
+    s.shockwaves.push({ x, y, r: maxR * 0.15, maxR, color, life: 0.35, maxLife: 0.35 });
+  }
+
+  // Big layered explosion: flash + shockwave + debris + spray + shake
+  function bigExplosion(s, x, y, opts) {
+    const color = opts.color;
+    const power = opts.power || 1;              // scales everything
+    spawnParticles(s, x, y, color, Math.round(18 * power));
+    spawnParticles(s, x, y, '#ffffff', Math.round(6 * power));
+    spawnDebris(s, x, y, color, Math.round(10 * power), power);
+    spawnShockwave(s, x, y, color, 34 * power);
+    if (power >= 1.6) spawnShockwave(s, x, y, '#ffffff', 22 * power);  // double ring for big kills
+    s.shake = Math.min(14, Math.max(s.shake, 4 * power));
+    // bright flash at the core
+    s.deathFlashes.push({ x, y, life: 0.12, maxLife: 0.12, flash: true, r: 18 * power });
   }
 
   function maybeDropPowerup(s, x, y) {
@@ -434,8 +470,8 @@
           if (e.hp <= 0) {
             e.alive = false;
             s.score += def.points * (s._mult || 1);
-            spawnParticles(s, e.x, e.y, def.color, 10);
-            s.enemyBooms.push({ x: e.x, y: e.y, art: def.boom, life: 0.45, maxLife: 0.45, size: def.size * 3.4 });
+            bigExplosion(s, e.x, e.y, { color: def.color, power: def.size >= 17 ? 1.25 : 1 });
+            s.enemyBooms.push({ x: e.x, y: e.y, art: def.boom, life: 0.6, maxLife: 0.6, size: def.size * 4.4 });
             maybeDropPowerup(s, e.x, e.y);
             syncHud();
           }
@@ -493,6 +529,18 @@
     s.deathFlashes = s.deathFlashes.filter((f) => f.life > 0);
     s.enemyBooms.forEach((f) => { f.life -= dt; });
     s.enemyBooms = s.enemyBooms.filter((f) => f.life > 0);
+    s.debris.forEach((d) => {
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      d.vx *= 0.92; d.vy *= 0.92;
+      d.rot += d.vrot * dt; d.life -= dt;
+    });
+    s.debris = s.debris.filter((d) => d.life > 0);
+    s.shockwaves.forEach((sw) => {
+      sw.life -= dt;
+      sw.r += (sw.maxR - sw.r) * Math.min(dt * 10, 1);
+    });
+    s.shockwaves = s.shockwaves.filter((sw) => sw.life > 0);
+    if (s.shake > 0) s.shake = Math.max(0, s.shake - dt * 40);
 
     const nowSec = performance.now() / 1000;
     const rapid = nowSec < s.rapidUntil;
@@ -537,8 +585,8 @@
       syncHud();
     }
     if (s.boss && s.boss.hp <= 0) {
-      spawnParticles(s, s.boss.x, s.boss.y, '#4ade80', 40);
-      s.enemyBooms.push({ x: s.boss.x, y: s.boss.y, art: 'boom_' + s.boss.kind, life: 0.8, maxLife: 0.8, size: s.boss.w * 1.6 });
+      bigExplosion(s, s.boss.x, s.boss.y, { color: '#4ade80', power: s.boss.kind === 'mothership' ? 3.2 : 2.4 });
+      s.enemyBooms.push({ x: s.boss.x, y: s.boss.y, art: 'boom_' + s.boss.kind, life: 1.1, maxLife: 1.1, size: s.boss.w * 2.2 });
       s.score += (s.boss.kind === 'mothership' ? 900 : 500) * s._mult;
       s.wave += 1;
       spawnWave(s, s.wave);
@@ -673,6 +721,20 @@
     const eimg = SHIP_IMAGES.explosion;
     if (eimg && eimg.complete && eimg.naturalWidth) {
       s.deathFlashes.forEach((f) => {
+        if (f.flash) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = Math.max(f.life / f.maxLife, 0);
+          const rr = f.r * (1 + (1 - f.life / f.maxLife) * 1.2);
+          const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, rr);
+          g.addColorStop(0, 'rgba(255,255,255,0.95)');
+          g.addColorStop(0.5, 'rgba(255,240,200,0.5)');
+          g.addColorStop(1, 'rgba(255,200,120,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(f.x, f.y, rr, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          return;
+        }
         ctx.save();
         ctx.globalAlpha = Math.max(f.life / f.maxLife, 0);
         const size = 60 * (1 + (1 - f.life / f.maxLife) * 0.5);
@@ -716,8 +778,17 @@
   }
 
   function draw() {
+    // screen shake: jitter the whole frame while s.shake > 0
+    let shakeX = 0, shakeY = 0;
+    if (s.shake > 0) {
+      shakeX = (Math.random() - 0.5) * s.shake;
+      shakeY = (Math.random() - 0.5) * s.shake;
+    }
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
     ctx.fillStyle = '#050814';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(-16, -16, W + 32, H + 32);
 
     // scrolling nebula background (seamless vertical loop)
     const bgImg = BG[s.bgKey];
@@ -746,7 +817,7 @@
     });
     ctx.globalAlpha = 1;
 
-    if (s.gameState === 'menu') return;
+    if (s.gameState === 'menu') { ctx.restore(); return; }
 
     s.powerups.forEach((pu) => {
       ctx.save();
@@ -769,14 +840,38 @@
     if (s.boss) drawBoss(s.boss);
 
     s.enemyBooms.forEach((f) => {
-      if (!artReady(f.art)) return;
+      if (f.art && !artReady(f.art)) return;
+      if (!f.art) return;
       const im = ART[f.art];
       ctx.save();
       ctx.globalAlpha = Math.max(f.life / f.maxLife, 0);
-      const grow = 1 + (1 - f.life / f.maxLife) * 0.4;
+      const grow = 1 + (1 - f.life / f.maxLife) * 0.6;   // punchier scale-up
       const scale = (f.size * grow) / im.naturalHeight;
       const w = im.naturalWidth * scale, h = im.naturalHeight * scale;
       ctx.drawImage(im, f.x - w / 2, f.y - h / 2, w, h);
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+
+    // expanding shockwave rings
+    s.shockwaves.forEach((sw) => {
+      ctx.save();
+      ctx.globalAlpha = Math.max(sw.life / sw.maxLife, 0) * 0.8;
+      ctx.strokeStyle = sw.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(sw.x, sw.y, sw.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+
+    // debris shards
+    s.debris.forEach((d) => {
+      ctx.save();
+      ctx.globalAlpha = Math.max(d.life / d.maxLife, 0);
+      ctx.translate(d.x, d.y);
+      ctx.rotate(d.rot);
+      ctx.fillStyle = d.color;
+      ctx.fillRect(-d.size / 2, -d.size / 2, d.size, d.size * 1.6);
       ctx.restore();
     });
     ctx.globalAlpha = 1;
@@ -816,6 +911,8 @@
     ctx.globalAlpha = 1;
 
     if (s.gameState === 'playing' || s.gameState === 'paused') drawPlayer();
+
+    ctx.restore(); // end screen-shake transform
   }
 
   // ---------- loop ----------
