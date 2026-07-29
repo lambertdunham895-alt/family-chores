@@ -470,17 +470,34 @@ function flipperCollide(bl,f,p,side,held){
   let nx=bl.x-c.x, ny=bl.y-c.y, d=Math.hypot(nx,ny);
   const R=bl.r+FTHICK;
   if(d<R && d>0.0001){ nx/=d; ny/=d;
-    bl.x=c.x+nx*R; bl.y=c.y+ny*R;
-    if(Math.abs(f.av)>0.02){               // actively flipping -> clean, predictable launch
+    // always seat the ball slightly CLEAR of the bat so gravity can't re-collide it every frame
+    bl.x=c.x+nx*(R+1.5); bl.y=c.y+ny*(R+1.5);
+    const swinging = Math.abs(f.av)>0.012;      // lower threshold: catch more of the swing
+    if(swinging){                                // actively flipping -> clean, predictable launch
       const r=Math.hypot(c.x-p.x,c.y-p.y);
       const power = 17 + 16*Math.min(1, r/FLEN);   // stronger the further out the ball sits
-      bl.x=c.x+nx*(R+2); bl.y=c.y+ny*(R+2);     // pop off the surface so it can't cling
+      bl.x=c.x+nx*(R+2.5); bl.y=c.y+ny*(R+2.5);    // pop well off the surface
       bl.vx = side*0.24*power;            // only a hint toward center (~13 deg from vertical)
       bl.vy = -0.97*power;                // strongly up
-    } else {                                // resting/sliding on the bat -> lively, not sticky
-      reflect(bl,nx,ny,0.34);             // real bounce off the bat rubber
-      const vn=bl.vx*nx+bl.vy*ny;       // only cancel the very faintest jitter so it can still settle
-      if(vn>0 && vn<0.6){ bl.vx-=vn*nx; bl.vy-=vn*ny; }
+    } else if(held){
+      // flipper fully raised and still held: live rubber, never dead/sticky
+      reflect(bl,nx,ny,0.45);
+      const vn=bl.vx*nx+bl.vy*ny, MINOUT=2.4;
+      if(vn<MINOUT){ const add=MINOUT-vn; bl.vx+=nx*add; bl.vy+=ny*add; }
+    } else {
+      const speed=Math.hypot(bl.vx,bl.vy);
+      if(speed<2.6){
+        // slow ball on a lowered flipper -> settle into a real cradle (stable, no jitter):
+        // seat it exactly on the bat and remove ALL motion along the normal.
+        bl.x=c.x+nx*R; bl.y=c.y+ny*R;
+        const vn=bl.vx*nx+bl.vy*ny;
+        bl.vx-=vn*nx; bl.vy-=vn*ny;        // keeps tangential slide, kills bounce-in/out
+      } else {
+        // moving ball -> lively bounce that always separates
+        reflect(bl,nx,ny,0.34);
+        const vn=bl.vx*nx+bl.vy*ny, MINOUT=1.6;
+        if(vn<MINOUT){ const add=MINOUT-vn; bl.vx+=nx*add; bl.vy+=ny*add; }
+      }
     }
   }
 }
@@ -787,7 +804,7 @@ function draw(){
   if(state==='title') overlay('PINBALL','Targets · missions · multiball · Z/C nudge');
   if(state==='over') overlay('GAME OVER','Tap to play again · '+score.toLocaleString());
   ctx.fillStyle='rgba(140,170,220,0.55)'; ctx.font='12px "Trebuchet MS"'; ctx.textAlign='left';
-  ctx.fillText('v14', 6, H-8);
+  ctx.fillText('v15', 6, H-8);
   if(!ready()){ ctx.fillStyle='rgba(4,7,14,0.9)'; ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#5aa0ff'; ctx.font='16px "Trebuchet MS"'; ctx.textAlign='center'; ctx.fillText('CALIBRATING…',W/2,H/2); ctx.textAlign='left'; }
 }
