@@ -8,13 +8,16 @@ html,body{margin:0;height:100%;background:#0a0f16;overflow:hidden;touch-action:n
   color:#cfe;display:flex;align-items:center;justify-content:center;font-size:22px;user-select:none;touch-action:none;}
 #du{left:74px;bottom:150px;width:60px;height:60px;} #dd{left:74px;bottom:30px;width:60px;height:60px;}
 #dl{left:14px;bottom:90px;width:60px;height:60px;} #dr{left:134px;bottom:90px;width:60px;height:60px;}
-#abtn{right:34px;bottom:60px;width:88px;height:88px;border-radius:50%;font-weight:bold;font-size:28px;
+#abtn{right:34px;bottom:60px;width:80px;height:80px;border-radius:50%;font-weight:bold;font-size:26px;
   background:rgba(60,30,30,0.55);border-color:rgba(255,150,120,0.6);color:#ffd;}
+#bbtn{right:126px;bottom:112px;width:74px;height:74px;border-radius:50%;font-weight:bold;font-size:24px;
+  background:rgba(30,45,70,0.6);border-color:rgba(150,200,255,0.65);color:#dff;}
 </style></head><body>
 <canvas id="cv"></canvas>
 <div id="du" class="ctl">▲</div><div id="dd" class="ctl">▼</div>
 <div id="dl" class="ctl">◀</div><div id="dr" class="ctl">▶</div>
 <div id="abtn" class="ctl">A</div>
+<div id="bbtn" class="ctl">B</div>
 <script>
 const TS=44,MW=30,MH=27,WW=MW*TS,WH=MH*TS;
 const G=[[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1], [1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]];
@@ -27,8 +30,87 @@ const bg=new Image(); let bgReady=false; bg.onload=()=>bgReady=true; bg.src='ass
 
 let state='title';let tt=0;
 const player={x:11*TS+TS/2,y:13*TS+TS/2,w:22,h:14,dir:'down',moving:false,step:0,name:'ALDEN'};
-const keys={up:0,down:0,left:0,right:0,act:0};
+const keys={up:0,down:0,left:0,right:0,act:0,atk:0};
 let dialogue=null,dlgIdx=0,dlgName='',actLatch=false,quest=0,hasBlade=false,dlgAfter=null;
+
+// ---------- COMBAT ----------
+const MAXHP=6;                 // 3 hearts (2 halves each)
+let hp=MAXHP, iframes=0, atkT=0, atkLatch=false, dead=0, hitFlash=0;
+let kx=0, ky=0;                // player knockback velocity
+const ATK_DUR=16, ATK_COOL=6;  // frames
+let shakeC=0, fx=[];           // combat particles
+
+const ETYPES={
+  crawler:{hp:2, sp:0.9,  r:13, color:'#7fbf5a', touch:1, score:0, chase:120},
+  brute:  {hp:4, sp:0.65, r:16, color:'#b0553a', touch:2, score:0, chase:150},
+  wisp:   {hp:1, sp:1.5,  r:11, color:'#7f9cff', touch:1, score:0, chase:200},
+};
+let enemies=[];
+function spawnEnemy(tx,ty,type){
+  const d=ETYPES[type];
+  enemies.push({x:tx*TS+TS/2, y:ty*TS+TS/2, type, hp:d.hp, maxHp:d.hp,
+    dir:'down', step:0, kx:0, ky:0, hurt:0, wanderT:0, wdx:0, wdy:0});
+}
+function seedEnemies(){
+  enemies=[];
+  // scattered through the open areas of the map
+  spawnEnemy(9,4,'crawler'); spawnEnemy(12,5,'crawler'); spawnEnemy(13,3,'wisp');
+  spawnEnemy(7,18,'crawler'); spawnEnemy(3,14,'brute');  spawnEnemy(9,21,'crawler');
+  spawnEnemy(14,24,'wisp');   spawnEnemy(20,25,'brute');  spawnEnemy(16,20,'crawler');
+  spawnEnemy(26,12,'wisp');   spawnEnemy(27,19,'crawler');
+}
+
+function boom(x,y,color,n){
+  for(let i=0;i<(n||10);i++){
+    const a=Math.random()*Math.PI*2, s=Math.random()*3+1;
+    fx.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color});
+  }
+}
+
+// the sword's reach: a box in front of the player while swinging
+function swordBox(){
+  const reach=34, wide=30;
+  let x=player.x, y=player.y;
+  if(player.dir==='up')    return {x:x-wide/2, y:y-reach, w:wide, h:reach};
+  if(player.dir==='down')  return {x:x-wide/2, y:y,       w:wide, h:reach};
+  if(player.dir==='left')  return {x:x-reach,  y:y-wide/2, w:reach, h:wide};
+  return {x:x, y:y-wide/2, w:reach, h:wide};
+}
+
+function attack(){
+  if(!hasBlade){ dialogue=["You have no blade. Father forged one at the forge."]; dlgIdx=0; dlgName=''; return; }
+  if(atkT>0) return;
+  atkT=ATK_DUR; SND.swing();
+}
+
+function hurtPlayer(dmg,srcX,srcY){
+  if(iframes>0||dead) return;
+  hp-=dmg; iframes=70; hitFlash=1; shakeC=Math.max(shakeC,8); SND.hurt();
+  const a=Math.atan2(player.y-srcY, player.x-srcX);
+  kx=Math.cos(a)*5.5; ky=Math.sin(a)*5.5;
+  if(hp<=0){ hp=0; dead=1; SND.die(); }
+}
+
+function killEnemy(e,i){
+  boom(e.x,e.y,ETYPES[e.type].color,16);
+  enemies.splice(i,1); shakeC=Math.max(shakeC,6); SND.kill();
+}
+
+// ---------- tiny sound ----------
+let AC=null;
+function initSnd(){ if(!AC){ try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } }
+function tone(f,d,t,v){ if(!AC)return; const o=AC.createOscillator(),g=AC.createGain();
+  o.type=t||'square'; o.frequency.value=f; g.gain.value=v||0.12;
+  o.connect(g); g.connect(AC.destination); const n=AC.currentTime;
+  g.gain.setValueAtTime(v||0.12,n); g.gain.exponentialRampToValueAtTime(0.001,n+d);
+  o.start(n); o.stop(n+d); }
+const SND={
+  swing:()=>tone(660,0.09,'square',0.10),
+  hit:  ()=>{tone(220,0.09,'sawtooth',0.14); tone(440,0.06,'square',0.08);},
+  kill: ()=>{[440,330,220].forEach((f,i)=>setTimeout(()=>tone(f,0.12,'square',0.13),i*55));},
+  hurt: ()=>{tone(160,0.22,'sawtooth',0.18);},
+  die:  ()=>{[330,247,196,131].forEach((f,i)=>setTimeout(()=>tone(f,0.35,'triangle',0.16),i*160));},
+};
 const OBJ=["Talk to Mother - she barely slept for worry.","Seek Old Maelis about the prophecy.",
  "Take the blade Father forged, at the forge.","Leave through the north gate. Follow the star.",""];
 
@@ -76,16 +158,100 @@ function interact(){
 }
 
 function update(){tt++;
-  if(state==='title'){ if(keys.act&&!actLatch)state='play'; actLatch=keys.act; return;}
+  if(shakeC>0)shakeC-=0.5;
+  if(hitFlash>0)hitFlash-=0.06;
+  fx.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=0.92;p.vy*=0.92;p.life-=0.045;});
+  fx=fx.filter(p=>p.life>0);
+
+  if(state==='title'){ if(keys.act&&!actLatch){initSnd();state='play';seedEnemies();} actLatch=keys.act; return;}
   if(state==='end'){actLatch=keys.act; return;}
+
+  // ---- death / respawn ----
+  if(dead){
+    dead++;
+    if(dead>140 && (keys.act&&!actLatch)){
+      hp=MAXHP; dead=0; iframes=90; kx=ky=0;
+      player.x=11*TS+TS/2; player.y=13*TS+TS/2;
+      seedEnemies();
+    }
+    actLatch=keys.act; return;
+  }
+
   if(keys.act&&!actLatch)interact(); actLatch=keys.act;
+  if(keys.atk&&!atkLatch)attack(); atkLatch=keys.atk;
+
   if(dialogue){player.moving=false; return;}
+
+  if(iframes>0)iframes--;
+  if(atkT>0)atkT--;
+
+  // ---- player movement (blocked briefly at the start of a swing) ----
+  const swinging = atkT>ATK_DUR-10;
   let dx=(keys.right?1:0)-(keys.left?1:0),dy=(keys.down?1:0)-(keys.up?1:0);
+  if(swinging){dx=0;dy=0;}
   if(dx&&dy){dx*=0.707;dy*=0.707;} const sp=2.4; player.moving=!!(dx||dy);
   if(dx<0)player.dir='left';else if(dx>0)player.dir='right';else if(dy<0)player.dir='up';else if(dy>0)player.dir='down';
   if(dx){const nx=player.x+dx*sp; if(boxFree(nx,player.y))player.x=nx;}
   if(dy){const ny=player.y+dy*sp; if(boxFree(player.x,ny))player.y=ny;}
   player.step = player.moving ? player.step+0.2 : 0;
+
+  // ---- player knockback ----
+  if(Math.abs(kx)>0.1||Math.abs(ky)>0.1){
+    if(boxFree(player.x+kx,player.y))player.x+=kx;
+    if(boxFree(player.x,player.y+ky))player.y+=ky;
+    kx*=0.85; ky*=0.85;
+  }
+
+  // ---- sword hits ----
+  if(atkT>ATK_DUR-12 && atkT<ATK_DUR-1){
+    const sb=swordBox();
+    for(let i=enemies.length-1;i>=0;i--){
+      const e=enemies[i], d=ETYPES[e.type];
+      if(e.hurt>0) continue;
+      if(e.x+d.r>sb.x && e.x-d.r<sb.x+sb.w && e.y+d.r>sb.y && e.y-d.r<sb.y+sb.h){
+        e.hp--; e.hurt=26; SND.hit();
+        boom(e.x,e.y,'#fff',6);
+        const a=Math.atan2(e.y-player.y,e.x-player.x);
+        e.kx=Math.cos(a)*6.5; e.ky=Math.sin(a)*6.5;
+        shakeC=Math.max(shakeC,4);
+        if(e.hp<=0) killEnemy(e,i);
+      }
+    }
+  }
+
+  // ---- enemy AI ----
+  for(const e of enemies){
+    const d=ETYPES[e.type];
+    if(e.hurt>0)e.hurt--;
+    // knockback first
+    if(Math.abs(e.kx)>0.1||Math.abs(e.ky)>0.1){
+      if(!solid(e.x+e.kx,e.y))e.x+=e.kx;
+      if(!solid(e.x,e.y+e.ky))e.y+=e.ky;
+      e.kx*=0.84; e.ky*=0.84;
+    } else if(e.hurt<=0){
+      const distx=player.x-e.x, disty=player.y-e.y;
+      const dist=Math.hypot(distx,disty);
+      let mx=0,my=0;
+      if(dist<d.chase){                    // chase the player
+        mx=distx/dist; my=disty/dist;
+      } else {                             // wander
+        e.wanderT--;
+        if(e.wanderT<=0){ e.wanderT=60+Math.random()*80;
+          const a=Math.random()*Math.PI*2; e.wdx=Math.cos(a); e.wdy=Math.sin(a); }
+        mx=e.wdx*0.5; my=e.wdy*0.5;
+      }
+      const nx=e.x+mx*d.sp, ny=e.y+my*d.sp;
+      if(!solid(nx,e.y))e.x=nx; else e.wanderT=0;
+      if(!solid(e.x,ny))e.y=ny; else e.wanderT=0;
+      if(Math.abs(mx)>Math.abs(my)) e.dir = mx<0?'left':'right';
+      else if(my) e.dir = my<0?'up':'down';
+      e.step+=0.16;
+    }
+    // touching the player hurts
+    if(Math.hypot(player.x-e.x,player.y-e.y) < d.r+11){
+      hurtPlayer(d.touch,e.x,e.y);
+    }
+  }
 }
 
 function drawChar(px,py,color,dir,step,isHero){
@@ -101,12 +267,87 @@ function drawChar(px,py,color,dir,step,isHero){
   else if(dir==='left'){ctx.fillRect(px-5,py-18+bob,2,2);} else if(dir==='right'){ctx.fillRect(px+3,py-18+bob,2,2);}
 }
 
+function drawEnemy(px,py,e){
+  const d=ETYPES[e.type];
+  const bob=Math.sin(e.step)*2;
+  ctx.fillStyle='rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(px,py+11,d.r,d.r*0.4,0,0,7); ctx.fill();
+  const flash = e.hurt>18;
+  ctx.fillStyle = flash ? '#fff' : d.color;
+  if(e.type==='wisp'){
+    ctx.shadowColor=d.color; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.arc(px,py-4+bob,d.r,0,7); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#04121e'; ctx.fillRect(px-4,py-7+bob,3,3); ctx.fillRect(px+2,py-7+bob,3,3);
+  } else {
+    ctx.fillRect(px-d.r,py-d.r+bob,d.r*2,d.r*1.7);
+    ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(px-d.r,py-d.r+bob,d.r*0.5,d.r*1.7);
+    // eyes
+    ctx.fillStyle= flash?'#900':'#1a0a06';
+    ctx.fillRect(px-6,py-d.r+5+bob,4,4); ctx.fillRect(px+2,py-d.r+5+bob,4,4);
+    if(e.type==='brute'){ ctx.fillStyle=flash?'#fff':'#7a3524';
+      ctx.fillRect(px-d.r-3,py-2+bob,4,9); ctx.fillRect(px+d.r-1,py-2+bob,4,9); }
+  }
+  // health pips for tougher foes
+  if(e.maxHp>1){
+    const w=d.r*2;
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(px-w/2,py-d.r-9+bob,w,4);
+    ctx.fillStyle='#7fbf5a'; ctx.fillRect(px-w/2,py-d.r-9+bob,w*(e.hp/e.maxHp),4);
+  }
+}
+
+function drawSword(px,py){
+  const t=1-(atkT/ATK_DUR);            // 0 -> 1 through the swing
+  const reach=38;
+  let base;
+  if(player.dir==='up')base=-Math.PI/2; else if(player.dir==='down')base=Math.PI/2;
+  else if(player.dir==='left')base=Math.PI; else base=0;
+  const sweep=(t-0.5)*1.5;             // arc across the facing direction
+  const a=base+sweep;
+  ctx.save();
+  ctx.translate(px,py-4);
+  ctx.rotate(a);
+  // arc trail
+  ctx.strokeStyle='rgba(200,240,255,'+(0.55*(1-t))+')'; ctx.lineWidth=8; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(0,0,reach*0.8,-0.7,0.7); ctx.stroke();
+  // blade
+  ctx.fillStyle='#dff3ff'; ctx.shadowColor='#9fdcff'; ctx.shadowBlur=10;
+  ctx.fillRect(10,-2.5,reach,5);
+  ctx.fillStyle='#ffd86b'; ctx.shadowBlur=0; ctx.fillRect(6,-5,5,10);
+  ctx.restore();
+}
+
+function drawHearts(){
+  const full=Math.floor(hp/2), half=hp%2, total=MAXHP/2;
+  for(let i=0;i<total;i++){
+    const x=18+i*26, y=58;
+    const fill = i<full ? 'full' : (i===full && half ? 'half' : 'empty');
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.fillStyle = fill==='empty' ? 'rgba(60,30,40,0.7)' : '#e0455a';
+    if(fill==='half'){
+      ctx.fillStyle='rgba(60,30,40,0.7)'; heartPath(); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.rect(-11,-11,11,22); ctx.clip();
+      ctx.fillStyle='#e0455a'; heartPath(); ctx.fill(); ctx.restore();
+    } else { heartPath(); ctx.fill(); }
+    ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=1.2; heartPath(); ctx.stroke();
+    ctx.restore();
+  }
+}
+function heartPath(){
+  ctx.beginPath();
+  ctx.moveTo(0,7);
+  ctx.bezierCurveTo(-11,-2,-7,-10,0,-4);
+  ctx.bezierCurveTo(7,-10,11,-2,0,7);
+  ctx.closePath();
+}
+
 function draw(){
   ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,VW,VH);
   if(!bgReady){ctx.fillStyle='#0a0f16';ctx.fillRect(0,0,VW,VH);ctx.fillStyle='#9fb4d8';ctx.font='16px "Trebuchet MS"';ctx.textAlign='center';ctx.fillText('Loading Briar Hollow...',VW/2,VH/2);ctx.textAlign='left';return;}
   let camX=player.x-VW/2,camY=player.y-VH/2;
   camX=Math.max(0,Math.min(WW-VW,camX)); camY=Math.max(0,Math.min(WH-VH,camY));
   if(WW<VW)camX=(WW-VW)/2; if(WH<VH)camY=(WH-VH)/2;
+  if(shakeC>0){ camX+=(Math.random()-0.5)*shakeC; camY+=(Math.random()-0.5)*shakeC; }
   ctx.drawImage(bg,-camX,-camY,WW,WH);
   // gate marker
   const gx=10*TS+TS/2-camX, gy=0*TS+TS/2-camY;
@@ -114,20 +355,54 @@ function draw(){
   ctx.strokeStyle='#ffe28a'; ctx.lineWidth=3; ctx.beginPath();
   ctx.moveTo(gx-16,gy+20); ctx.lineTo(gx-16,gy-2); ctx.quadraticCurveTo(gx,gy-22,gx+16,gy-2); ctx.lineTo(gx+16,gy+20); ctx.stroke();
   ctx.restore();
-  // entities y-sorted
-  const ents=NPCS.map(n=>({px:n.x*TS+TS/2-camX,py:n.y*TS+TS/2-camY,c:n.color,d:n.dir||'down',s:0,h:false}));
-  ents.push({px:player.x-camX,py:player.y-camY,c:'#2e3a55',d:player.dir,s:player.step,h:true});
+  // entities y-sorted (NPCs, enemies, hero)
+  const ents=NPCS.map(n=>({px:n.x*TS+TS/2-camX,py:n.y*TS+TS/2-camY,c:n.color,d:n.dir||'down',s:0,h:false,kind:'npc'}));
+  for(const e of enemies){
+    ents.push({px:e.x-camX,py:e.y-camY,kind:'enemy',e:e});
+  }
+  ents.push({px:player.x-camX,py:player.y-camY,c:'#2e3a55',d:player.dir,s:player.step,h:true,kind:'hero'});
   ents.sort((a,b)=>a.py-b.py);
-  for(const e of ents) drawChar(e.px,e.py,e.c,e.d,e.s,e.h);
+  for(const en of ents){
+    if(en.kind==='enemy') drawEnemy(en.px,en.py,en.e);
+    else {
+      if(en.kind==='hero' && iframes>0 && Math.floor(tt/4)%2===0) continue;  // blink while hurt
+      drawChar(en.px,en.py,en.c,en.d,en.s,en.h);
+    }
+  }
+  // sword arc on top
+  if(atkT>0) drawSword(player.x-camX,player.y-camY);
+  // combat particles
+  for(const p of fx){
+    ctx.globalAlpha=Math.max(0,p.life); ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x-camX,p.y-camY,3,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1;
   // HUD
   ctx.fillStyle='rgba(8,12,20,0.6)'; ctx.fillRect(10,10,118,30);
   ctx.fillStyle='#ffd86b'; ctx.font='bold 16px "Trebuchet MS"'; ctx.fillText('\u2694 '+player.name,18,31);
-  if(hasBlade){ctx.fillStyle='#9fdcff';ctx.font='12px "Trebuchet MS"';ctx.fillText('\u2605 Crystal Blade',18,56);}
+  if(state==='play'){ drawHearts(); }
+  if(hasBlade){ctx.fillStyle='#9fdcff';ctx.font='12px "Trebuchet MS"';ctx.fillText('\u2605 Crystal Blade',18,86);}
   if(state==='play'&&quest<4&&!dialogue){const o=OBJ[quest];ctx.font='13px "Trebuchet MS"';
     const w=Math.min(VW-24,ctx.measureText(o).width+26);
     ctx.fillStyle='rgba(8,12,20,0.74)';ctx.fillRect(VW/2-w/2,12,w,26);
     ctx.strokeStyle='rgba(127,217,192,0.5)';ctx.lineWidth=1;ctx.strokeRect(VW/2-w/2,12,w,26);
     ctx.fillStyle='#bfe';ctx.textAlign='center';ctx.fillText(o,VW/2,29);ctx.textAlign='left';}
+  // red flash when hit
+  if(hitFlash>0){ ctx.fillStyle='rgba(180,20,40,'+(hitFlash*0.35)+')'; ctx.fillRect(0,0,VW,VH); }
+
+  // death overlay
+  if(dead){
+    ctx.fillStyle='rgba(6,4,10,'+Math.min(0.82,dead/60)+')'; ctx.fillRect(0,0,VW,VH);
+    ctx.textAlign='center';
+    ctx.fillStyle='#e0455a'; ctx.font='bold 42px "Trebuchet MS"';
+    ctx.fillText('YOU FELL', VW/2, VH/2-10);
+    if(dead>140){
+      ctx.fillStyle='#cfe'; ctx.font='17px "Trebuchet MS"';
+      ctx.fillText('Press A to rise again', VW/2, VH/2+30);
+    }
+    ctx.textAlign='left';
+  }
+
   if(dialogue){const bh=120,by=VH-bh-90;
     ctx.fillStyle='rgba(8,12,22,0.94)';ctx.fillRect(16,by,VW-32,bh);
     ctx.strokeStyle='#6da';ctx.lineWidth=2;ctx.strokeRect(16,by,VW-32,bh);
@@ -152,12 +427,14 @@ function wrapCenter(t,cx,y,mw,lh){const ws=t.split(' ');let l='',yy=y;for(const 
 function loop(){update();draw();requestAnimationFrame(loop);}
 addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=1;if(['ArrowDown','s','S'].includes(e.key))keys.down=1;
   if(['ArrowLeft','a','A'].includes(e.key))keys.left=1;if(['ArrowRight','d','D'].includes(e.key))keys.right=1;
-  if([' ','Enter','z','Z'].includes(e.key)){e.preventDefault();keys.act=1;}});
+  if([' ','Enter','z','Z'].includes(e.key)){e.preventDefault();keys.act=1;}
+  if(['x','X','k','K'].includes(e.key)){e.preventDefault();keys.atk=1;}});
 addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=0;if(['ArrowDown','s','S'].includes(e.key))keys.down=0;
   if(['ArrowLeft','a','A'].includes(e.key))keys.left=0;if(['ArrowRight','d','D'].includes(e.key))keys.right=0;
-  if([' ','Enter','z','Z'].includes(e.key))keys.act=0;});
+  if([' ','Enter','z','Z'].includes(e.key))keys.act=0;
+  if(['x','X','k','K'].includes(e.key))keys.atk=0;});
 function bind(id,k){const el=document.getElementById(id);const on=e=>{e.preventDefault();keys[k]=1;},off=e=>{e.preventDefault();keys[k]=0;};
   el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);el.addEventListener('pointerleave',off);el.addEventListener('pointercancel',off);}
-bind('du','up');bind('dd','down');bind('dl','left');bind('dr','right');bind('abtn','act');
+bind('du','up');bind('dd','down');bind('dl','left');bind('dr','right');bind('abtn','act');bind('bbtn','atk');
 loop();
 </script></body></html>
