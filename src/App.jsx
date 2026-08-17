@@ -6,6 +6,8 @@ import ConnectFour from "./games/ConnectFour.jsx";
 import KingsAdvance from "./games/KingsAdvance.jsx";
 import PinballGame from "./games/PinballGame.jsx";
 import StellarSiegeGame from "./games/StellarSiegeGame.jsx";
+import GroceryList from "./GroceryList.jsx";
+import BillTracker from "./BillTracker.jsx";
 
 /* ============================================================
    GAMES REGISTRY — add a new game in 2 steps:
@@ -251,7 +253,7 @@ export default function App() {
       return Date.now() < expires;
     } catch { return false; }
   });
-  const [section, setSection] = useState("hub"); // "hub" | "chores" | "games"
+  const [section, setSection] = useState("hub"); // "hub" | "chores" | "games" | "grocery" | "bills"
   const [activeGame, setActiveGame] = useState(null); // game id when playing
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
@@ -464,7 +466,38 @@ export default function App() {
 
   // ---- Landing hub (chores or games) ----
   if (section === "hub") {
-    return <LandingHub onChores={() => setSection("chores")} onGames={() => setSection("games")} />;
+    return (
+      <LandingHub
+        onChores={() => setSection("chores")}
+        onGames={() => setSection("games")}
+        onGrocery={() => setSection("grocery")}
+        onBills={() => setSection("bills")}
+      />
+    );
+  }
+
+  // ---- Grocery list ----
+  if (section === "grocery") {
+    return (
+      <GroceryList
+        supabase={supabase}
+        profile={profile}
+        credsMissing={credsMissing}
+        onBack={() => setSection("hub")}
+      />
+    );
+  }
+
+  // ---- Bill tracker ----
+  if (section === "bills") {
+    return (
+      <BillTracker
+        supabase={supabase}
+        profile={profile}
+        credsMissing={credsMissing}
+        onBack={() => setSection("hub")}
+      />
+    );
   }
 
   // ---- Games section ----
@@ -1435,7 +1468,7 @@ function PinLock({ onUnlock }) {
 }
 
 /* ---------------- Landing hub (first screen after PIN) ---------------- */
-function LandingHub({ onChores, onGames }) {
+function LandingHub({ onChores, onGames, onGrocery, onBills }) {
   const handleLock = () => {
     if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
     try { localStorage.removeItem("family_pin_unlock"); } catch {}
@@ -1456,6 +1489,16 @@ function LandingHub({ onChores, onGames }) {
             <span style={S.hubIcon}>🎮</span>
             <span style={S.hubTileName}>Games</span>
             <span style={S.hubTileSub}>Play together as a family</span>
+          </button>
+          <button style={{ ...S.hubTile, ...S.hubTileGrocery }} onClick={onGrocery}>
+            <span style={S.hubIcon}>🛒</span>
+            <span style={S.hubTileName}>Groceries</span>
+            <span style={S.hubTileSub}>Shared list, synced live</span>
+          </button>
+          <button style={{ ...S.hubTile, ...S.hubTileBills }} onClick={onBills}>
+            <span style={S.hubIcon}>🧾</span>
+            <span style={S.hubTileName}>Bills</span>
+            <span style={S.hubTileSub}>What's due &amp; what's paid</span>
           </button>
         </div>
         <div style={{ textAlign: "center", marginTop: 28 }}>
@@ -1670,6 +1713,8 @@ const S = {
   hubTile: { background: "#fff", border: "3px solid", borderRadius: 20, padding: "28px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer", boxShadow: "0 4px 14px rgba(44,95,124,0.10)", transition: "transform 0.15s" },
   hubTileChores: { borderColor: "#2c5f7c" },
   hubTileGames: { borderColor: "#7c4adb" },
+  hubTileGrocery: { borderColor: "#3d7a4e" },
+  hubTileBills: { borderColor: "#c78a2c" },
   hubIcon: { fontSize: 56, lineHeight: 1 },
   hubTileName: { fontSize: 20, fontWeight: 800, color: "#1a2b3c", marginTop: 6 },
   hubTileSub: { fontSize: 12, color: "#6b7c8c", textAlign: "center", lineHeight: 1.3 },
