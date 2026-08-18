@@ -120,11 +120,26 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
     if (staples.some((x) => x.name.toLowerCase() === nm.toLowerCase())) {
       flash(`${nm} is already a staple`); return;
     }
+    const cat_ = newStapleCat;
+    setNewStaple("");
     try {
-      await supabase.from("grocery_staples").insert({ name: nm, category: newStapleCat });
-      setNewStaple("");
+      // insert and take the real row back, so the new staple appears instantly
+      const { data, error } = await supabase
+        .from("grocery_staples")
+        .insert({ name: nm, category: cat_ })
+        .select()
+        .single();
+      if (error) throw error;
+      setStaples((p) =>
+        [...p.filter((x) => x.name.toLowerCase() !== nm.toLowerCase()), data]
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
       flash(`${nm} added to staples`);
-    } catch (e) { console.error(e); flash("Couldn't add staple"); }
+    } catch (e) {
+      console.error(e);
+      flash("Couldn't add staple");
+      load();   // fall back to a reload so the UI can't drift from the database
+    }
   };
 
   const removeStaple = async (st) => {
@@ -135,11 +150,18 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
   };
 
   const saveAsStaple = async (item) => {
+    if (staples.some((x) => x.name.toLowerCase() === item.name.toLowerCase())) {
+      flash("Already in staples"); return;
+    }
     try {
-      await supabase.from("grocery_staples")
-        .insert({ name: item.name, category: item.category });
+      const { data, error } = await supabase.from("grocery_staples")
+        .insert({ name: item.name, category: item.category })
+        .select()
+        .single();
+      if (error) throw error;
+      setStaples((p) => [...p, data].sort((a, b) => a.name.localeCompare(b.name)));
       flash(`${item.name} saved to staples`);
-    } catch (e) { flash("Already in staples"); }
+    } catch (e) { flash("Already in staples"); load(); }
   };
 
   /* ---------- grouping ---------- */
