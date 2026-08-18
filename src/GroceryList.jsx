@@ -32,6 +32,9 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
   const [cat, setCat] = useState("Produce");
   const [showStaples, setShowStaples] = useState(false);
   const [stapleFilter, setStapleFilter] = useState("All");
+  const [manageStaples, setManageStaples] = useState(false);
+  const [newStaple, setNewStaple] = useState("");
+  const [newStapleCat, setNewStapleCat] = useState("Produce");
   const [toast, setToast] = useState(null);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1800); };
@@ -109,6 +112,26 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
     setItems((p) => p.filter((i) => !i.checked));
     try { await supabase.from("grocery_items").delete().eq("checked", true); }
     catch (e) { console.error(e); }
+  };
+
+  const addStaple = async () => {
+    const nm = newStaple.trim();
+    if (!nm) return;
+    if (staples.some((x) => x.name.toLowerCase() === nm.toLowerCase())) {
+      flash(`${nm} is already a staple`); return;
+    }
+    try {
+      await supabase.from("grocery_staples").insert({ name: nm, category: newStapleCat });
+      setNewStaple("");
+      flash(`${nm} added to staples`);
+    } catch (e) { console.error(e); flash("Couldn't add staple"); }
+  };
+
+  const removeStaple = async (st) => {
+    if (!confirm(`Remove "${st.name}" from staples?`)) return;
+    setStaples((p) => p.filter((x) => x.id !== st.id));
+    try { await supabase.from("grocery_staples").delete().eq("id", st.id); }
+    catch (e) { console.error(e); flash("Couldn't remove"); }
   };
 
   const saveAsStaple = async (item) => {
@@ -200,6 +223,50 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
       {/* ---- staples drawer ---- */}
       {showStaples && (
         <div style={S.stapleBox}>
+          <div style={S.stapleHead}>
+            <span style={{ fontWeight: 800, color: "#8a5a1a", fontSize: 13 }}>
+              ⭐ Staples ({staples.length})
+            </span>
+            <button
+              style={{ ...S.manageBtn, ...(manageStaples ? S.manageBtnOn : {}) }}
+              onClick={() => setManageStaples((v) => !v)}
+            >
+              {manageStaples ? "Done" : "Manage"}
+            </button>
+          </div>
+
+          {manageStaples && (
+            <div style={S.stapleAdd}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  style={{ ...S.input, flex: 1 }}
+                  value={newStaple}
+                  onChange={(e) => setNewStaple(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") addStaple(); }}
+                  placeholder="New staple…"
+                />
+                <button style={S.smallAdd} onClick={addStaple}>+ Add</button>
+              </div>
+              <div style={S.catRow}>
+                {CAT_ORDER.map((c) => (
+                  <button
+                    key={c}
+                    style={{
+                      ...S.catChip,
+                      ...(newStapleCat === c
+                        ? { background: CAT_COLOR[c], color: "#fff", borderColor: CAT_COLOR[c] }
+                        : {}),
+                    }}
+                    onClick={() => setNewStapleCat(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <p style={S.manageHint}>Tap any staple below to remove it.</p>
+            </div>
+          )}
+
           <div style={S.catRow}>
             {stapleCats.map((c) => (
               <button
@@ -214,6 +281,23 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
           <div style={S.stapleGrid}>
             {shownStaples.map((s) => {
               const already = onList(s.name);
+              if (manageStaples) {
+                return (
+                  <button
+                    key={s.id}
+                    style={{
+                      ...S.stapleBtn,
+                      background: "#fff5f4",
+                      borderColor: "#e8b8b0",
+                      color: "#c0392b",
+                      borderLeft: `4px solid ${CAT_COLOR[s.category] || "#6b7c8c"}`,
+                    }}
+                    onClick={() => removeStaple(s)}
+                  >
+                    ✕ {s.name}
+                  </button>
+                );
+              }
               return (
                 <button
                   key={s.id}
@@ -319,6 +403,16 @@ const S = {
   stapleBox: { background: "#fffdf5", border: "1.5px solid #f0d9a0", borderRadius: 12,
     padding: 12, marginBottom: 14 },
   stapleGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 10 },
+  stapleHead: { display: "flex", justifyContent: "space-between", alignItems: "center",
+    marginBottom: 4 },
+  manageBtn: { background: "#fff", border: "1.5px solid #dcc79a", color: "#8a5a1a",
+    borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
+  manageBtnOn: { background: "#8a5a1a", color: "#fff", borderColor: "#8a5a1a" },
+  stapleAdd: { background: "#fff", border: "1.5px solid #ecdcb8", borderRadius: 10,
+    padding: 10, marginTop: 8 },
+  smallAdd: { background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 8,
+    padding: "0 16px", fontWeight: 700, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" },
+  manageHint: { fontSize: 11.5, color: "#8a5a1a", margin: "8px 0 0", opacity: 0.85 },
   stapleBtn: { background: "#fff", border: "1.5px solid #dce5ec", borderRadius: 8,
     padding: "9px 8px", fontSize: 13, fontWeight: 600, color: "#2c3e50",
     cursor: "pointer", textAlign: "left" },
