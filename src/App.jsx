@@ -8,6 +8,7 @@ import PinballGame from "./games/PinballGame.jsx";
 import StellarSiegeGame from "./games/StellarSiegeGame.jsx";
 import GroceryList from "./GroceryList.jsx";
 import BillTracker from "./BillTracker.jsx";
+import FamilyCalendar from "./FamilyCalendar.jsx";
 
 /* ============================================================
    GAMES REGISTRY — add a new game in 2 steps:
@@ -253,7 +254,7 @@ export default function App() {
       return Date.now() < expires;
     } catch { return false; }
   });
-  const [section, setSection] = useState("hub"); // "hub" | "chores" | "games" | "grocery" | "bills"
+  const [section, setSection] = useState("hub"); // "hub" | "chores" | "games" | "grocery" | "bills" | "calendar"
   const [activeGame, setActiveGame] = useState(null); // game id when playing
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
@@ -472,6 +473,19 @@ export default function App() {
         onGames={() => setSection("games")}
         onGrocery={() => setSection("grocery")}
         onBills={() => setSection("bills")}
+        onCalendar={() => setSection("calendar")}
+      />
+    );
+  }
+
+  // ---- Family calendar ----
+  if (section === "calendar") {
+    return (
+      <FamilyCalendar
+        supabase={supabase}
+        profile={profile}
+        credsMissing={credsMissing}
+        onBack={() => setSection("hub")}
       />
     );
   }
@@ -1468,7 +1482,7 @@ function PinLock({ onUnlock }) {
 }
 
 /* ---------------- Landing hub (first screen after PIN) ---------------- */
-function LandingHub({ onChores, onGames, onGrocery, onBills }) {
+function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
   const handleLock = () => {
     if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
     try { localStorage.removeItem("family_pin_unlock"); } catch {}
@@ -1480,6 +1494,11 @@ function LandingHub({ onChores, onGames, onGrocery, onBills }) {
         <h1 style={S.hubTitle}>The Dunham House</h1>
         <p style={S.hubSub}>Welcome home! Pick what you're doing.</p>
         <div style={S.hubGrid}>
+          <button style={{ ...S.hubTile, ...S.hubTileCal }} onClick={onCalendar}>
+            <span style={S.hubIcon}>📅</span>
+            <span style={S.hubTileName}>Calendar</span>
+            <span style={S.hubTileSub}>Who's doing what &amp; dinner</span>
+          </button>
           <button style={{ ...S.hubTile, ...S.hubTileChores }} onClick={onChores}>
             <span style={S.hubIcon}>📋</span>
             <span style={S.hubTileName}>Chores</span>
@@ -1713,6 +1732,7 @@ const S = {
   hubTile: { background: "#fff", border: "3px solid", borderRadius: 20, padding: "28px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer", boxShadow: "0 4px 14px rgba(44,95,124,0.10)", transition: "transform 0.15s" },
   hubTileChores: { borderColor: "#2c5f7c" },
   hubTileGames: { borderColor: "#7c4adb" },
+  hubTileCal: { borderColor: "#7c4adb" },
   hubTileGrocery: { borderColor: "#3d7a4e" },
   hubTileBills: { borderColor: "#c78a2c" },
   hubIcon: { fontSize: 56, lineHeight: 1 },
