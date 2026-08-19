@@ -13,7 +13,21 @@ const CAT_COLOR = {
   Debt: "#c0392b", Subscriptions: "#2c8f8f", Other: "#6b7c8c",
 };
 
-function monthKey(d = new Date()) { return d.toISOString().slice(0, 7); }
+function monthKey(d = new Date()) {
+  // local-time safe (no UTC drift)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+// a one-time bill only shows in the month it's due; monthly bills show every month
+function inPeriod(bill, period) {
+  if (bill.recurrence !== "once") return true;
+  return (bill.due_date || "").slice(0, 7) === period;
+}
+function dayOf(bill) {
+  if (bill.recurrence === "once" && bill.due_date) {
+    return Number(bill.due_date.slice(8, 10));
+  }
+  return bill.due_day;
+}
 function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -42,6 +56,8 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const [dueDay, setDueDay] = useState("1");
   const [cat, setCat] = useState("Utilities");
   const [autopay, setAutopay] = useState(false);
+  const [recurrence, setRecurrence] = useState("monthly");   // 'monthly' | 'once'
+  const [dueDate, setDueDate] = useState("");                // for one-time bills
   const [toast, setToast] = useState(null);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1900); };
@@ -97,23 +113,37 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   };
 
   const startNew = () => {
+    const d = new Date();
     setEditing({}); setName(""); setAmount(""); setDueDay("1");
     setCat("Utilities"); setAutopay(false);
+    setRecurrence("monthly");
+    setDueDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   };
   const startEdit = (b) => {
     setEditing(b); setName(b.name); setAmount(String(b.amount));
     setDueDay(String(b.due_day)); setCat(b.category); setAutopay(!!b.autopay);
+    setRecurrence(b.recurrence || "monthly");
+    setDueDate(b.due_date || "");
   };
 
   const save = async () => {
     const amt = parseFloat(amount);
-    const day = parseInt(dueDay, 10);
     if (!name.trim()) { flash("Give it a name"); return; }
     if (isNaN(amt) || amt < 0) { flash("Enter a valid amount"); return; }
-    if (isNaN(day) || day < 1 || day > 31) { flash("Due day must be 1–31"); return; }
+
+    let day = parseInt(dueDay, 10);
+    if (recurrence === "once") {
+      if (!dueDate) { flash("Pick the date it's due"); return; }
+      day = Number(dueDate.slice(8, 10));      // keep due_day in sync for sorting
+    } else if (isNaN(day) || day < 1 || day > 31) {
+      flash("Due day must be 1–31"); return;
+    }
+
     const payload = {
       name: name.trim(), amount: amt, due_day: day,
       category: cat, autopay, active: true,
+      recurrence,
+      due_date: recurrence === "once" ? dueDate : null,
     };
     try {
       if (editing.id) {
@@ -136,8 +166,10 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   };
 
   /* ---------- derived ---------- */
-  const total = bills.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const paidTotal = bills.filter(isPaid).reduce((s, b) => s + Number(b.amount || 0), 0);
+  // one-time bills only appear in their own month
+  const visible = bills.filter((b) => inPeriod(b, period));
+  const total = visible.reduce((s, b) => s + Number(b.amount || 0), 0);
+  const paidTotal = visible.filter(isPaid).reduce((s, b) => s + Number(b.amount || 0), 0);
   const remaining = total - paidTotal;
   const pct = total > 0 ? Math.round((paidTotal / total) * 100) : 0;
 
@@ -146,17 +178,18 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const dayNow = today.getDate();
 
   const statusOf = (b) => {
+    const d = dayOf(b);
     if (isPaid(b)) return { key: "paid", label: "Paid", color: "#3d7a4e" };
     if (!viewingThisMonth) return { key: "due", label: "Unpaid", color: "#6b7c8c" };
-    if (b.due_day < dayNow) return { key: "late", label: "Overdue", color: "#c0392b" };
-    if (b.due_day - dayNow <= 5) return { key: "soon", label: `Due in ${b.due_day - dayNow}d`, color: "#c78a2c" };
-    return { key: "due", label: `Due ${ordinal(b.due_day)}`, color: "#6b7c8c" };
+    if (d < dayNow) return { key: "late", label: "Overdue", color: "#c0392b" };
+    if (d - dayNow <= 5) return { key: "soon", label: `Due in ${d - dayNow}d`, color: "#c78a2c" };
+    return { key: "due", label: `Due ${ordinal(d)}`, color: "#6b7c8c" };
   };
 
-  const sorted = [...bills].sort((a, b) => {
+  const sorted = [...visible].sort((a, b) => {
     const pa = isPaid(a) ? 1 : 0, pb = isPaid(b) ? 1 : 0;
     if (pa !== pb) return pa - pb;              // unpaid first
-    return a.due_day - b.due_day;
+    return dayOf(a) - dayOf(b);
   });
 
   if (loading) {
@@ -210,7 +243,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
           <div style={{ ...S.barInner, width: `${pct}%` }} />
         </div>
         <div style={S.sumNote}>
-          {bills.filter(isPaid).length} of {bills.length} paid · {money(paidTotal)} so far
+          {visible.filter(isPaid).length} of {visible.length} paid · {money(paidTotal)} so far
         </div>
       </div>
 
@@ -231,9 +264,33 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
           <label style={S.label}>Amount</label>
           <input style={S.input} type="number" inputMode="decimal" step="0.01" min="0"
             value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="142.50" />
-          <label style={S.label}>Day of month it's due</label>
-          <input style={S.input} type="number" inputMode="numeric" min="1" max="31"
-            value={dueDay} onChange={(e) => setDueDay(e.target.value)} placeholder="15" />
+          <label style={S.label}>How often</label>
+          <div style={S.chipRow}>
+            <button
+              style={{ ...S.chip, ...(recurrence === "monthly" ? S.chipOn : {}) }}
+              onClick={() => setRecurrence("monthly")}
+            >🔁 Every month</button>
+            <button
+              style={{ ...S.chip, ...(recurrence === "once" ? S.chipOn : {}) }}
+              onClick={() => setRecurrence("once")}
+            >1️⃣ One time</button>
+          </div>
+
+          {recurrence === "monthly" ? (
+            <>
+              <label style={S.label}>Day of month it's due</label>
+              <input style={S.input} type="number" inputMode="numeric" min="1" max="31"
+                value={dueDay} onChange={(e) => setDueDay(e.target.value)} placeholder="15" />
+              <p style={S.hint}>Resets to unpaid on the 1st of each month.</p>
+            </>
+          ) : (
+            <>
+              <label style={S.label}>Date it's due</label>
+              <input style={S.input} type="date"
+                value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <p style={S.hint}>Shows only in that month, then disappears once it's behind you.</p>
+            </>
+          )}
           <label style={S.label}>Category</label>
           <div style={S.chipRow}>
             {CATS.map((c) => (
@@ -254,11 +311,13 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       )}
 
       {/* ---- list ---- */}
-      {bills.length === 0 && !editing ? (
+      {visible.length === 0 && !editing ? (
         <div style={S.empty}>
           <div style={{ fontSize: 40 }}>🧾</div>
           <p style={{ color: "#6b7c8c", marginTop: 8 }}>
-            No bills yet. Tap "+ Add bill" to track your first one.
+            {bills.length === 0
+              ? 'No bills yet. Tap "+ Add bill" to track your first one.'
+              : "Nothing due this month."}
           </p>
         </div>
       ) : (
@@ -277,6 +336,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
                     {b.name}
                   </span>
                   {b.autopay && <span style={S.autoTag}>AUTO</span>}
+                  {b.recurrence === "once" && <span style={S.onceTag}>ONE TIME</span>}
                 </div>
                 <div style={S.billMeta}>
                   <span style={{ ...S.catDot, background: CAT_COLOR[b.category] || "#6b7c8c" }} />
@@ -353,6 +413,9 @@ const S = {
   billName: { fontSize: 15.5, fontWeight: 600 },
   autoTag: { fontSize: 9.5, fontWeight: 800, color: "#2c8f8f", background: "#e0f3f3",
     padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
+  onceTag: { fontSize: 9.5, fontWeight: 800, color: "#7c4adb", background: "#efe8fb",
+    padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
+  hint: { fontSize: 11.5, color: "#8a97a8", margin: "6px 0 0" },
   billMeta: { fontSize: 11.5, color: "#6b7c8c", marginTop: 3,
     display: "flex", alignItems: "center", gap: 5 },
   catDot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
