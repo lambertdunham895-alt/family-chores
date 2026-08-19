@@ -36,6 +36,10 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
   const [newStaple, setNewStaple] = useState("");
   const [newStapleCat, setNewStapleCat] = useState("Produce");
   const [toast, setToast] = useState(null);
+  const [viewing, setViewing] = useState(null);   // item whose photo is open
+  const [uploading, setUploading] = useState(null); // item id currently uploading
+  const fileRef = React.useRef(null);
+  const pendingItem = React.useRef(null);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1800); };
 
@@ -147,6 +151,84 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
     setStaples((p) => p.filter((x) => x.id !== st.id));
     try { await supabase.from("grocery_staples").delete().eq("id", st.id); }
     catch (e) { console.error(e); flash("Couldn't remove"); }
+  };
+
+  /* ---------- photos ---------- */
+  // Shrink a phone photo in the browser before upload: a 4MB pic becomes ~100KB,
+  // which keeps the list fast and the storage bill tiny.
+  const compress = (file) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 900;
+        let { width: w, height: h } = img;
+        if (w > h && w > MAX) { h = Math.round((h * MAX) / w); w = MAX; }
+        else if (h > MAX) { w = Math.round((w * MAX) / h); h = MAX; }
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        cv.toBlob((b) => (b ? resolve(b) : reject(new Error("compress failed"))), "image/jpeg", 0.72);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad image")); };
+      img.src = url;
+    });
+
+  const pickPhoto = (item) => {
+    pendingItem.current = item;
+    if (fileRef.current) { fileRef.current.value = ""; fileRef.current.click(); }
+  };
+
+  const onFileChosen = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    const item = pendingItem.current;
+    if (!file || !item) return;
+    if (!file.type.startsWith("image/")) { flash("Pick an image file"); return; }
+    setUploading(item.id);
+    try {
+      const blob = await compress(file);
+      const path = `items/${item.id}-${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("grocery-photos")
+        .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("grocery-photos").getPublicUrl(path);
+      const url = pub.publicUrl;
+
+      // remove the old photo file if this item already had one
+      if (item.photo_path) {
+        try { await supabase.storage.from("grocery-photos").remove([item.photo_path]); } catch (_) {}
+      }
+      setItems((p) => p.map((i) => (i.id === item.id ? { ...i, photo_url: url, photo_path: path } : i)));
+      await supabase.from("grocery_items")
+        .update({ photo_url: url, photo_path: path }).eq("id", item.id);
+      flash("Photo added");
+    } catch (err) {
+      console.error(err);
+      flash("Couldn't upload photo");
+    }
+    setUploading(null);
+    pendingItem.current = null;
+  };
+
+  const removePhoto = async (item) => {
+    if (!confirm("Remove this photo?")) return;
+    setItems((p) => p.map((i) => (i.id === item.id ? { ...i, photo_url: null, photo_path: null } : i)));
+    setViewing(null);
+    try {
+      if (item.photo_path) await supabase.storage.from("grocery-photos").remove([item.photo_path]);
+      await supabase.from("grocery_items")
+        .update({ photo_url: null, photo_path: null }).eq("id", item.id);
+    } catch (e) { console.error(e); }
+  };
+
+  const saveNote = async (item, txt) => {
+    const t = (txt || "").trim() || null;
+    setItems((p) => p.map((i) => (i.id === item.id ? { ...i, note: t } : i)));
+    setViewing((v) => (v && v.id === item.id ? { ...v, note: t } : v));
+    try { await supabase.from("grocery_items").update({ note: t }).eq("id", item.id); }
+    catch (e) { console.error(e); }
   };
 
   const saveAsStaple = async (item) => {
@@ -362,6 +444,13 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
                     <span style={S.itemName}>{i.name}</span>
                     {i.qty && <span style={S.qtyTag}>{i.qty}</span>}
                   </div>
+                  <button
+                    style={{ ...S.iconBtn, ...(i.photo_url || i.note ? S.iconBtnActive : {}) }}
+                    title={i.photo_url ? "View photo" : "Add a photo"}
+                    onClick={(e) => { e.stopPropagation(); setViewing(i); }}
+                  >
+                    {uploading === i.id ? "…" : (i.photo_url ? "📷" : "📷")}
+                  </button>
                   <button style={S.iconBtn} title="Save to staples"
                     onClick={() => saveAsStaple(i)}>⭐</button>
                   <button style={S.iconBtn} title="Remove"
@@ -384,6 +473,10 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
                     <span style={{ ...S.itemName, textDecoration: "line-through" }}>{i.name}</span>
                     {i.qty && <span style={S.qtyTag}>{i.qty}</span>}
                   </div>
+                  {(i.photo_url || i.note) && (
+                    <button style={{ ...S.iconBtn, ...S.iconBtnActive }}
+                      onClick={(e) => { e.stopPropagation(); setViewing(i); }}>📷</button>
+                  )}
                   <button style={S.iconBtn} onClick={() => removeItem(i)}>✕</button>
                 </div>
               ))}
@@ -392,10 +485,81 @@ export default function GroceryList({ supabase, profile, onBack, credsMissing })
         </>
       )}
 
+      {/* hidden picker: on a phone this offers Camera or Photo Library */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={onFileChosen}
+      />
+
+      {/* ---- photo / detail viewer ---- */}
+      {viewing && (
+        <div style={S.modalWrap} onClick={() => setViewing(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalHead}>
+              <div>
+                <div style={S.modalName}>{viewing.name}</div>
+                <div style={S.modalMeta}>
+                  {viewing.category}{viewing.qty ? ` · ${viewing.qty}` : ""}
+                  {viewing.added_by ? ` · added by ${nameOf(viewing.added_by)}` : ""}
+                </div>
+              </div>
+              <button style={S.closeBtn} onClick={() => setViewing(null)}>✕</button>
+            </div>
+
+            {viewing.photo_url ? (
+              <img src={viewing.photo_url} alt={viewing.name} style={S.photo} />
+            ) : (
+              <div style={S.noPhoto}>
+                <div style={{ fontSize: 40 }}>📷</div>
+                <p style={{ color: "#6b7c8c", marginTop: 6, fontSize: 13 }}>
+                  No photo yet — add one so everyone knows exactly which one.
+                </p>
+              </div>
+            )}
+
+            <label style={S.noteLabel}>Note (brand, size, etc.)</label>
+            <input
+              style={S.input}
+              defaultValue={viewing.note || ""}
+              placeholder="e.g., the low-sodium kind"
+              onBlur={(e) => saveNote(viewing, e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+            />
+
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button
+                style={S.photoBtn}
+                onClick={() => pickPhoto(viewing)}
+                disabled={uploading === viewing.id}
+              >
+                {uploading === viewing.id
+                  ? "Uploading…"
+                  : (viewing.photo_url ? "Replace photo" : "📷 Add photo")}
+              </button>
+              {viewing.photo_url && (
+                <button style={S.removePhotoBtn} onClick={() => removePhoto(viewing)}>
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <div style={S.toast}>{toast}</div>}
       <div style={{ height: 40 }} />
     </div>
   );
+}
+
+function nameOf(id) {
+  if (id === "adult_a") return "Dad";
+  if (id === "adult_b") return "Mom";
+  if (id === "kid") return "Nolan";
+  return id;
 }
 
 const S = {
@@ -451,7 +615,30 @@ const S = {
   qtyTag: { marginLeft: 8, fontSize: 11.5, fontWeight: 700, color: "#5a6b7a",
     background: "#eef3f6", padding: "2px 7px", borderRadius: 8 },
   iconBtn: { background: "none", border: "none", fontSize: 14, cursor: "pointer",
-    padding: "4px 6px", opacity: 0.65 },
+    padding: "4px 6px", opacity: 0.4 },
+  iconBtnActive: { opacity: 1 },
+  modalWrap: { position: "fixed", inset: 0, background: "rgba(8,14,22,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    padding: 18, zIndex: 200 },
+  modal: { background: "#fff", borderRadius: 16, padding: 16, width: "100%",
+    maxWidth: 420, maxHeight: "88vh", overflowY: "auto",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.35)" },
+  modalHead: { display: "flex", justifyContent: "space-between",
+    alignItems: "flex-start", marginBottom: 12, gap: 10 },
+  modalName: { fontSize: 19, fontWeight: 800, color: "#1a2b3c" },
+  modalMeta: { fontSize: 12, color: "#6b7c8c", marginTop: 2 },
+  closeBtn: { background: "none", border: "none", fontSize: 18, cursor: "pointer",
+    color: "#6b7c8c", padding: 4, lineHeight: 1 },
+  photo: { width: "100%", borderRadius: 12, display: "block",
+    background: "#eef3f6", maxHeight: "48vh", objectFit: "contain" },
+  noPhoto: { background: "#f4f8fa", border: "2px dashed #c5d4de", borderRadius: 12,
+    padding: "28px 16px", textAlign: "center" },
+  noteLabel: { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7c8c",
+    marginTop: 14, marginBottom: 4 },
+  photoBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none",
+    borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 14.5, cursor: "pointer" },
+  removePhotoBtn: { background: "#fff", color: "#c0392b", border: "1.5px solid #e8b8b0",
+    borderRadius: 8, padding: "12px 16px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
   doneHeader: { display: "flex", justifyContent: "space-between", alignItems: "center",
     padding: "8px 4px", borderTop: "2px solid #e3ebf0", marginTop: 8,
     color: "#6b7c8c", fontSize: 13, fontWeight: 700 },
