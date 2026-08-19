@@ -58,6 +58,9 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const [autopay, setAutopay] = useState(false);
   const [recurrence, setRecurrence] = useState("monthly");   // 'monthly' | 'once'
   const [dueDate, setDueDate] = useState("");                // for one-time bills
+  const [variable, setVariable] = useState(false);           // amount changes monthly
+  const [history, setHistory] = useState(null);              // {bill, rows} when viewing
+  const [askAmount, setAskAmount] = useState(null);          // {bill, value} when paying
   const [toast, setToast] = useState(null);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1900); };
@@ -92,30 +95,64 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const isPaid = (b) => !!paidMap[b.id];
 
   /* ---------- actions ---------- */
+  const markPaid = async (bill, amt) => {
+    const row = {
+      bill_id: bill.id, period_key: period, paid: true,
+      amount_paid: amt, paid_by: profile?.id || null,
+    };
+    setPayments((p) => [...p.filter((x) => x.bill_id !== bill.id), { ...row, id: `tmp${Date.now()}` }]);
+    try {
+      await supabase.from("bill_payments").upsert(row, { onConflict: "bill_id,period_key" });
+    } catch (e) { console.error(e); flash("Couldn't save"); load(); }
+  };
+
   const togglePaid = async (bill) => {
-    const already = isPaid(bill);
-    if (already) {
+    if (isPaid(bill)) {
       setPayments((p) => p.filter((x) => x.bill_id !== bill.id));
       try {
         await supabase.from("bill_payments").delete()
           .match({ bill_id: bill.id, period_key: period });
       } catch (e) { console.error(e); }
-    } else {
-      const row = {
-        bill_id: bill.id, period_key: period, paid: true,
-        amount_paid: bill.amount, paid_by: profile?.id || null,
-      };
-      setPayments((p) => [...p, { ...row, id: `tmp${Date.now()}` }]);
-      try {
-        await supabase.from("bill_payments").upsert(row, { onConflict: "bill_id,period_key" });
-      } catch (e) { console.error(e); flash("Couldn't save"); }
+      return;
     }
+    // variable bills: confirm what was actually paid this month
+    if (bill.variable) {
+      setAskAmount({ bill, value: String(bill.amount ?? "") });
+      return;
+    }
+    markPaid(bill, bill.amount);
+  };
+
+  const confirmAmount = async () => {
+    const { bill, value } = askAmount;
+    const amt = parseFloat(value);
+    if (isNaN(amt) || amt < 0) { flash("Enter a valid amount"); return; }
+    setAskAmount(null);
+    await markPaid(bill, amt);
+    // remember it as the new estimate for next month
+    if (Math.abs(amt - Number(bill.amount || 0)) > 0.005) {
+      setBills((p) => p.map((b) => (b.id === bill.id ? { ...b, amount: amt } : b)));
+      try { await supabase.from("bills").update({ amount: amt }).eq("id", bill.id); }
+      catch (e) { console.error(e); }
+    }
+  };
+
+  const openHistory = async (bill) => {
+    setHistory({ bill, rows: null });
+    try {
+      const { data } = await supabase.from("bill_payments")
+        .select("period_key, amount_paid, paid_at")
+        .eq("bill_id", bill.id)
+        .order("period_key", { ascending: false })
+        .limit(12);
+      setHistory({ bill, rows: data || [] });
+    } catch (e) { console.error(e); setHistory({ bill, rows: [] }); }
   };
 
   const startNew = () => {
     const d = new Date();
     setEditing({}); setName(""); setAmount(""); setDueDay("1");
-    setCat("Utilities"); setAutopay(false);
+    setCat("Utilities"); setAutopay(false); setVariable(false);
     setRecurrence("monthly");
     setDueDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   };
@@ -124,6 +161,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
     setDueDay(String(b.due_day)); setCat(b.category); setAutopay(!!b.autopay);
     setRecurrence(b.recurrence || "monthly");
     setDueDate(b.due_date || "");
+    setVariable(!!b.variable);
   };
 
   const save = async () => {
@@ -141,7 +179,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
 
     const payload = {
       name: name.trim(), amount: amt, due_day: day,
-      category: cat, autopay, active: true,
+      category: cat, autopay, active: true, variable,
       recurrence,
       due_date: recurrence === "once" ? dueDate : null,
     };
@@ -168,8 +206,14 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   /* ---------- derived ---------- */
   // one-time bills only appear in their own month
   const visible = bills.filter((b) => inPeriod(b, period));
-  const total = visible.reduce((s, b) => s + Number(b.amount || 0), 0);
-  const paidTotal = visible.filter(isPaid).reduce((s, b) => s + Number(b.amount || 0), 0);
+  // for a paid bill use the real amount paid; otherwise the estimate
+  const amtFor = (b) => {
+    const p = paidMap[b.id];
+    if (p && p.amount_paid != null) return Number(p.amount_paid);
+    return Number(b.amount || 0);
+  };
+  const total = visible.reduce((s, b) => s + amtFor(b), 0);
+  const paidTotal = visible.filter(isPaid).reduce((s, b) => s + amtFor(b), 0);
   const remaining = total - paidTotal;
   const pct = total > 0 ? Math.round((paidTotal / total) * 100) : 0;
 
@@ -303,6 +347,16 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
             <input type="checkbox" checked={autopay} onChange={(e) => setAutopay(e.target.checked)} />
             <span>On autopay</span>
           </label>
+          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+            <input type="checkbox" checked={variable} onChange={(e) => setVariable(e.target.checked)} />
+            <span>Amount changes each month (electric, water, gas…)</span>
+          </label>
+          {variable && (
+            <p style={S.hint}>
+              The amount above is just an estimate. When you mark it paid you'll enter what it
+              actually was, and that becomes next month's estimate.
+            </p>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button style={S.saveBtn} onClick={save}>Save</button>
             <button style={S.cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
@@ -337,6 +391,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
                   </span>
                   {b.autopay && <span style={S.autoTag}>AUTO</span>}
                   {b.recurrence === "once" && <span style={S.onceTag}>ONE TIME</span>}
+                  {b.variable && <span style={S.varTag}>VARIES</span>}
                 </div>
                 <div style={S.billMeta}>
                   <span style={{ ...S.catDot, background: CAT_COLOR[b.category] || "#6b7c8c" }} />
@@ -344,12 +399,90 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
                   <span style={{ color: st.color, fontWeight: 700 }}>· {st.label}</span>
                 </div>
               </div>
-              <div style={S.amount}>{money(b.amount)}</div>
+              <div style={S.amount}>
+                {money(amtFor(b))}
+                {b.variable && !paid && <div style={S.estTag}>est.</div>}
+              </div>
+              <button style={S.iconBtn} title="Payment history"
+                onClick={() => openHistory(b)}>📊</button>
               <button style={S.iconBtn} onClick={() => startEdit(b)}>✎</button>
               <button style={{ ...S.iconBtn, color: "#c0392b" }} onClick={() => remove(b)}>✕</button>
             </div>
           );
         })
+      )}
+
+      {/* ---- what did it actually cost this month? ---- */}
+      {askAmount && (
+        <div style={S.modalWrap} onClick={() => setAskAmount(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalName}>{askAmount.bill.name}</div>
+            <p style={S.modalSub}>How much was it this month?</p>
+            <input
+              style={{ ...S.input, fontSize: 22, fontWeight: 700, textAlign: "center" }}
+              type="number" inputMode="decimal" step="0.01" min="0"
+              value={askAmount.value}
+              autoFocus
+              onChange={(e) => setAskAmount({ ...askAmount, value: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") confirmAmount(); }}
+            />
+            <p style={S.hint}>Last time: {money(askAmount.bill.amount)}</p>
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button style={S.saveBtn} onClick={confirmAmount}>Mark paid</button>
+              <button style={S.cancelBtn} onClick={() => setAskAmount(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- payment history ---- */}
+      {history && (
+        <div style={S.modalWrap} onClick={() => setHistory(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalHead}>
+              <div>
+                <div style={S.modalName}>{history.bill.name}</div>
+                <p style={S.modalSub}>What you've paid</p>
+              </div>
+              <button style={S.closeBtn} onClick={() => setHistory(null)}>✕</button>
+            </div>
+
+            {history.rows === null ? (
+              <p style={S.hint}>Loading…</p>
+            ) : history.rows.length === 0 ? (
+              <p style={S.hint}>No payments recorded yet.</p>
+            ) : (
+              <>
+                {(() => {
+                  const vals = history.rows.map((r) => Number(r.amount_paid || 0));
+                  const max = Math.max(...vals, 1);
+                  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+                  return (
+                    <>
+                      <div style={S.histStats}>
+                        <span>avg {money(avg)}</span>
+                        <span>low {money(Math.min(...vals))}</span>
+                        <span>high {money(Math.max(...vals))}</span>
+                      </div>
+                      {history.rows.map((r) => {
+                        const v = Number(r.amount_paid || 0);
+                        return (
+                          <div key={r.period_key} style={S.histRow}>
+                            <span style={S.histMonth}>{monthLabel(r.period_key).replace(/ \d{4}$/, "")}</span>
+                            <div style={S.histBarOuter}>
+                              <div style={{ ...S.histBarInner, width: `${(v / max) * 100}%` }} />
+                            </div>
+                            <span style={S.histAmt}>{money(v)}</span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {toast && <div style={S.toast}>{toast}</div>}
@@ -416,6 +549,27 @@ const S = {
   onceTag: { fontSize: 9.5, fontWeight: 800, color: "#7c4adb", background: "#efe8fb",
     padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
   hint: { fontSize: 11.5, color: "#8a97a8", margin: "6px 0 0" },
+  varTag: { fontSize: 9.5, fontWeight: 800, color: "#c78a2c", background: "#fdf1dc",
+    padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
+  estTag: { fontSize: 9, color: "#8a97a8", fontWeight: 600, textAlign: "right" },
+  modalWrap: { position: "fixed", inset: 0, background: "rgba(8,14,22,0.72)",
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 200 },
+  modal: { background: "#fff", borderRadius: 16, padding: 18, width: "100%",
+    maxWidth: 380, maxHeight: "86vh", overflowY: "auto",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.35)" },
+  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
+  modalName: { fontSize: 19, fontWeight: 800, color: "#1a2b3c" },
+  modalSub: { fontSize: 12.5, color: "#6b7c8c", margin: "2px 0 12px" },
+  closeBtn: { background: "none", border: "none", fontSize: 18, cursor: "pointer",
+    color: "#6b7c8c", padding: 4, lineHeight: 1 },
+  histStats: { display: "flex", justifyContent: "space-between", fontSize: 11.5,
+    color: "#6b7c8c", fontWeight: 700, background: "#f4f8fa", borderRadius: 8,
+    padding: "7px 10px", marginBottom: 10 },
+  histRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 7 },
+  histMonth: { fontSize: 11.5, color: "#6b7c8c", width: 62, flexShrink: 0 },
+  histBarOuter: { flex: 1, background: "#eef3f6", borderRadius: 6, height: 14, overflow: "hidden" },
+  histBarInner: { background: "#2c5f7c", height: "100%", borderRadius: 6 },
+  histAmt: { fontSize: 12.5, fontWeight: 700, width: 68, textAlign: "right" },
   billMeta: { fontSize: 11.5, color: "#6b7c8c", marginTop: 3,
     display: "flex", alignItems: "center", gap: 5 },
   catDot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
