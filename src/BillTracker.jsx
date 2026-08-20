@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 /* ============================================================
    BILL TRACKER
@@ -45,6 +45,57 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+/* ---- stroke icon (Lucide style) for the scan button ---- */
+function ScanIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: "block" }}>
+      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+      <path d="M7 12h10" />
+    </svg>
+  );
+}
+
+/* ---- shrink a photo before upload; small print needs more detail than product photos ---- */
+function compressForOCR(file, maxDim = 1600, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("That doesn't look like an image"));
+      img.onload = () => {
+        let { width: w, height: h } = img;
+        if (w > maxDim || h > maxDim) {
+          const s = maxDim / Math.max(w, h);
+          w = Math.round(w * s);
+          h = Math.round(h * s);
+        }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const url = c.toDataURL("image/jpeg", quality);
+        resolve(url.split(",")[1]);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+const todayYmd = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
 export default function BillTracker({ supabase, profile, onBack, credsMissing }) {
   const [bills, setBills] = useState([]);
   const [payments, setPayments] = useState([]);   // for the visible month
@@ -62,6 +113,12 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const [history, setHistory] = useState(null);              // {bill, rows} when viewing
   const [askAmount, setAskAmount] = useState(null);          // {bill, value} when paying
   const [toast, setToast] = useState(null);
+
+  // AI scan
+  const fileRef = useRef(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState(null);
+  const [scanNote, setScanNote] = useState(null);   // shown above the prefilled form
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1900); };
 
@@ -151,17 +208,98 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
 
   const startNew = () => {
     const d = new Date();
+    setScanNote(null);
     setEditing({}); setName(""); setAmount(""); setDueDay("1");
     setCat("Utilities"); setAutopay(false); setVariable(false);
     setRecurrence("monthly");
     setDueDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   };
   const startEdit = (b) => {
+    setScanNote(null);
     setEditing(b); setName(b.name); setAmount(String(b.amount));
     setDueDay(String(b.due_day)); setCat(b.category); setAutopay(!!b.autopay);
     setRecurrence(b.recurrence || "monthly");
     setDueDate(b.due_date || "");
     setVariable(!!b.variable);
+  };
+
+  /* ---------- AI scan ---------- */
+  const onPickPhoto = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";          // let the same file be picked again later
+    if (!file) return;
+    if (credsMissing) { flash("Supabase isn't configured"); return; }
+
+    setScanError(null);
+    setScanNote(null);
+    setScanning(true);
+    try {
+      const b64 = await compressForOCR(file);
+      const { data, error } = await supabase.functions.invoke("scan-doc", {
+        body: {
+          image_base64: b64,
+          media_type: "image/jpeg",
+          mode: "bill",
+          today: todayYmd(),
+        },
+      });
+      if (error) throw new Error(error.message || "Scan failed");
+      if (data && data.error) throw new Error(data.error);
+
+      const r = Array.isArray(data && data.results) ? data.results[0] : null;
+      if (!r) throw new Error("Nothing readable in that photo.");
+
+      const missing = [];
+
+      // name
+      const nm = typeof r.name === "string" ? r.name.trim().slice(0, 60) : "";
+      setName(nm);
+      if (!nm) missing.push("the biller");
+
+      // amount
+      const amt = typeof r.amount === "number" && isFinite(r.amount) && r.amount >= 0
+        ? r.amount : null;
+      setAmount(amt == null ? "" : String(amt));
+      if (amt == null) missing.push("the amount");
+
+      // due date -> monthly bill on that day of the month (the common case)
+      if (isYmd(r.due_date)) {
+        setDueDate(r.due_date);
+        setDueDay(String(Number(r.due_date.slice(8, 10))));
+      } else {
+        setDueDate(todayYmd());
+        setDueDay("1");
+        missing.push("the due date");
+      }
+
+      setCat(CATS.includes(r.category) ? r.category : "Other");
+      setVariable(!!r.variable);
+      setRecurrence("monthly");
+      setAutopay(false);
+      setEditing({});
+
+      const conf = typeof r.confidence === "number" ? r.confidence : 1;
+      if (missing.length) {
+        setScanNote({
+          tone: "warn",
+          text: `Couldn't find ${missing.join(" or ")} — fill that in below.`,
+        });
+      } else if (conf < 0.6) {
+        setScanNote({
+          tone: "warn",
+          text: "Wasn't fully sure about this one. Check the amount and due date.",
+        });
+      } else {
+        setScanNote({
+          tone: "ok",
+          text: "Filled in from your photo. Check it, then save.",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setScanError(err.message || "Couldn't scan that photo.");
+    }
+    setScanning(false);
   };
 
   const save = async () => {
@@ -192,6 +330,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
         flash("Bill added");
       }
       setEditing(null);
+      setScanNote(null);
     } catch (e) { console.error(e); flash("Couldn't save"); }
   };
 
@@ -294,14 +433,50 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       {/* ---- add / edit ---- */}
       <div style={S.headerRow}>
         <h3 style={S.sectionTitle}>Bills</h3>
-        {!editing && <button style={S.addBtn} onClick={startNew}>+ Add bill</button>}
+        {!editing && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={{ ...S.scanBtn, ...(scanning ? { opacity: 0.6 } : {}) }}
+              disabled={scanning}
+              onClick={() => fileRef.current && fileRef.current.click()}
+            >
+              <ScanIcon size={15} color="#2c5f7c" />
+              <span>{scanning ? "Reading…" : "Scan"}</span>
+            </button>
+            <button style={S.addBtn} onClick={startNew}>+ Add bill</button>
+          </div>
+        )}
       </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={onPickPhoto}
+        style={{ display: "none" }}
+      />
+
+      {scanning && (
+        <div style={S.scanNoteBox}>Reading the bill… this takes a few seconds.</div>
+      )}
+
+      {scanError && !scanning && (
+        <div style={S.errNote}>
+          <span style={{ flex: 1 }}>{scanError}</span>
+          <button style={S.iconBtn} onClick={() => setScanError(null)}>✕</button>
+        </div>
+      )}
 
       {editing && (
         <div style={S.editCard}>
           <div style={{ fontWeight: 700, marginBottom: 10 }}>
             {editing.id ? "Edit bill" : "New bill"}
           </div>
+          {scanNote && (
+            <div style={scanNote.tone === "warn" ? S.noteWarn : S.noteOk}>
+              {scanNote.text}
+            </div>
+          )}
           <label style={S.label}>Name</label>
           <input style={S.input} value={name} onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Electric" />
@@ -359,7 +534,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
           )}
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button style={S.saveBtn} onClick={save}>Save</button>
-            <button style={S.cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
+            <button style={S.cancelBtn} onClick={() => { setEditing(null); setScanNote(null); }}>Cancel</button>
           </div>
         </div>
       )}
@@ -533,6 +708,7 @@ const S = {
   chipRow: { display: "flex", gap: 5, flexWrap: "wrap" },
   chip: { padding: "6px 11px", borderRadius: 20, border: "1.5px solid #dce5ec",
     background: "#fff", color: "#5a6b7a", fontWeight: 600, fontSize: 12, cursor: "pointer" },
+  chipOn: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
   saveBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none",
     borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: "pointer" },
   cancelBtn: { flex: 1, background: "#fff", color: "#6b7c8c", border: "1.5px solid #c5d4de",
@@ -577,6 +753,18 @@ const S = {
   iconBtn: { background: "none", border: "none", fontSize: 14, cursor: "pointer",
     padding: "4px 5px", opacity: 0.6 },
   empty: { textAlign: "center", padding: "50px 20px" },
+  scanBtn: { display: "flex", alignItems: "center", gap: 6, background: "#fff",
+    color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 8,
+    padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
+  scanNoteBox: { background: "#eef6fb", border: "1.5px solid #bcd9ea", borderRadius: 10,
+    padding: "10px 12px", fontSize: 13, color: "#2c5f7c", marginBottom: 12, fontWeight: 600 },
+  errNote: { display: "flex", alignItems: "center", gap: 8, background: "#fdeceb",
+    border: "1.5px solid #f0b4ae", borderRadius: 10, padding: "10px 12px",
+    fontSize: 12.5, color: "#a03027", marginBottom: 12 },
+  noteOk: { background: "#eef6fb", border: "1px solid #bcd9ea", borderRadius: 8,
+    padding: "8px 10px", fontSize: 12, color: "#2c5f7c", marginBottom: 10 },
+  noteWarn: { background: "#fff6e3", border: "1px solid #f0d9a0", borderRadius: 8,
+    padding: "8px 10px", fontSize: 12, color: "#a06a10", marginBottom: 10 },
   toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
     background: "#1a2b3c", color: "#fff", padding: "11px 20px", borderRadius: 30,
     fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.2)", zIndex: 100, fontSize: 14 },
