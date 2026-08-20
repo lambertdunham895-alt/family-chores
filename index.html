@@ -1,12 +1,166 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Our Household Chart</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
+// supabase/functions/scan-doc/index.ts
+// Scans a photo of a schedule, flyer, or bill and returns structured JSON.
+// The Anthropic API key lives ONLY here, as a Supabase secret. Never in the app.
+
+const MODEL = "claude-sonnet-5";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // ~5MB of base64
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
+  });
+
+const CATEGORIES = ["School", "Sports", "Work", "Appointment", "Birthday", "Trip", "Other"];
+const WHO_IDS = ["family", "adult_a", "adult_b", "kid"];
+
+function calendarPrompt(today: string) {
+  return `You are reading a photo of a schedule, flyer, invitation, sign-up sheet, or handwritten note belonging to a family.
+
+Today's date is ${today}.
+
+Extract EVERY dated event you can find. Return ONLY a JSON array. No preamble, no markdown fences, no explanation.
+
+Each element must have exactly these keys:
+{
+  "title": string — short and specific, e.g. "Baseball vs Cabot" not "Game",
+  "day": string — "YYYY-MM-DD",
+  "start_time": string or null — 24-hour "HH:MM", null if the event has no clock time,
+  "end_time": string or null — 24-hour "HH:MM", null if not stated,
+  "location": string or null,
+  "category": one of ${JSON.stringify(CATEGORIES)},
+  "who": one of ${JSON.stringify(WHO_IDS)} — "kid" is the child, "adult_a" is Dad, "adult_b" is Mom, "family" if it involves everyone or is unclear,
+  "confidence": number between 0 and 1 — how sure you are about the date and time specifically
+}
+
+Rules:
+- If the year is missing, infer the nearest sensible one relative to ${today}. A schedule listing September when today is August means this coming September.
+- If a day of the week is given alongside a date and they disagree, trust the numeric date and lower the confidence.
+- Convert all times to 24-hour. "6" on a sports schedule almost always means 18:00, not 06:00 — use judgment about what is plausible for the event type.
+- Do not invent events. If the image contains no dated events, return [].
+- If text is cut off or illegible, still include the event but set confidence below 0.5.
+- Recurring language like "every Tuesday in October" should be expanded into one entry per occurrence.`;
+}
+
+function billPrompt(today: string) {
+  return `You are reading a photo of a bill, invoice, or billing statement.
+
+Today's date is ${today}.
+
+Return ONLY a JSON array containing a single object. No preamble, no markdown fences.
+
+{
+  "name": string — the biller, e.g. "Entergy" or "Conway Water",
+  "amount": number — the amount due, digits only, no currency symbol,
+  "due_date": string — "YYYY-MM-DD",
+  "category": string — e.g. Utilities, Insurance, Internet, Phone, Loan, Subscription, Other,
+  "variable": boolean — true if this is the kind of bill whose amount changes month to month (electric, water, gas),
+  "confidence": number between 0 and 1
+}
+
+If you cannot find an amount or a due date, still return the object with nulls for what is missing and a confidence below 0.5.`;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (!apiKey) return json({ error: "Scanning isn't configured yet (missing API key)." }, 500);
+
+  let payload: {
+    image_base64?: string;
+    media_type?: string;
+    mode?: string;
+    today?: string;
+  };
+  try {
+    payload = await req.json();
+  } catch {
+    return json({ error: "Bad request body." }, 400);
+  }
+
+  const { image_base64, media_type, mode, today } = payload;
+
+  if (!image_base64) return json({ error: "No image was sent." }, 400);
+  if (image_base64.length > MAX_IMAGE_BYTES)
+    return json({ error: "That photo is too large. Try again — the app should be shrinking it." }, 413);
+
+  const mt = media_type === "image/png" ? "image/png"
+    : media_type === "image/webp" ? "image/webp"
+    : "image/jpeg";
+
+  const day = (today && /^\d{4}-\d{2}-\d{2}$/.test(today))
+    ? today
+    : new Date().toISOString().slice(0, 10);
+
+  const prompt = mode === "bill" ? billPrompt(day) : calendarPrompt(day);
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 2000,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mt, data: image_base64 } },
+              { type: "text", text: prompt },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (e) {
+    console.error("fetch failed", e);
+    return json({ error: "Couldn't reach the scanning service." }, 502);
+  }
+
+  if (!res.ok) {
+    const detail = await res.text();
+    console.error("anthropic error", res.status, detail);
+    if (res.status === 401) return json({ error: "The API key was rejected." }, 500);
+    if (res.status === 429) return json({ error: "Too many scans right now. Wait a moment." }, 429);
+    return json({ error: "The scanning service returned an error." }, 502);
+  }
+
+  const data = await res.json();
+
+  const raw = (data.content || [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("\n")
+    .trim();
+
+  // Strip markdown fences if the model wrapped its answer, then grab the array.
+  let cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const first = cleaned.indexOf("[");
+  const last = cleaned.lastIndexOf("]");
+  if (first !== -1 && last > first) cleaned = cleaned.slice(first, last + 1);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.error("unparseable model output", raw.slice(0, 500));
+    return json({ error: "Couldn't read that image clearly. Try a straighter, brighter photo." }, 422);
+  }
+
+  if (!Array.isArray(parsed)) return json({ error: "Unexpected result shape." }, 422);
+
+  return json({ results: parsed, mode: mode === "bill" ? "bill" : "calendar" });
+});
