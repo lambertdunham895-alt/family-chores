@@ -60,6 +60,18 @@ function ScanIcon({ size = 16, color = "currentColor" }) {
   );
 }
 
+function InfoIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: "block" }}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}
+
 /* ---- shrink a photo before upload; small print needs more detail than product photos ---- */
 function compressForOCR(file, maxDim = 1600, quality = 0.85) {
   return new Promise((resolve, reject) => {
@@ -96,6 +108,25 @@ const todayYmd = () => {
 };
 const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+function copyText(t) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch (e) { console.error(e); }
+}
+
 export default function BillTracker({ supabase, profile, onBack, credsMissing }) {
   const [bills, setBills] = useState([]);
   const [payments, setPayments] = useState([]);   // for the visible month
@@ -110,6 +141,10 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const [recurrence, setRecurrence] = useState("monthly");   // 'monthly' | 'once'
   const [dueDate, setDueDate] = useState("");                // for one-time bills
   const [variable, setVariable] = useState(false);           // amount changes monthly
+  const [acctNum, setAcctNum] = useState("");
+  const [phone, setPhone] = useState("");
+  const [notes, setNotes] = useState("");
+  const [details, setDetails] = useState(null);              // bill being viewed in the details modal
   const [history, setHistory] = useState(null);              // {bill, rows} when viewing
   const [askAmount, setAskAmount] = useState(null);          // {bill, value} when paying
   const [toast, setToast] = useState(null);
@@ -212,6 +247,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
     setEditing({}); setName(""); setAmount(""); setDueDay("1");
     setCat("Utilities"); setAutopay(false); setVariable(false);
     setRecurrence("monthly");
+    setAcctNum(""); setPhone(""); setNotes("");
     setDueDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   };
   const startEdit = (b) => {
@@ -221,6 +257,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
     setRecurrence(b.recurrence || "monthly");
     setDueDate(b.due_date || "");
     setVariable(!!b.variable);
+    setAcctNum(b.account_number || ""); setPhone(b.phone || ""); setNotes(b.notes || "");
   };
 
   /* ---------- AI scan ---------- */
@@ -276,6 +313,9 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       setVariable(!!r.variable);
       setRecurrence("monthly");
       setAutopay(false);
+      setAcctNum(typeof r.account_number === "string" ? r.account_number.trim().slice(0, 40) : "");
+      setPhone(typeof r.phone === "string" ? r.phone.trim().slice(0, 30) : "");
+      setNotes("");
       setEditing({});
 
       const conf = typeof r.confidence === "number" ? r.confidence : 1;
@@ -320,6 +360,9 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       category: cat, autopay, active: true, variable,
       recurrence,
       due_date: recurrence === "once" ? dueDate : null,
+      account_number: acctNum.trim() || null,
+      phone: phone.trim() || null,
+      notes: notes.trim() || null,
     };
     try {
       if (editing.id) {
@@ -532,6 +575,27 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
               actually was, and that becomes next month's estimate.
             </p>
           )}
+
+          <div style={S.divider} />
+
+          <label style={S.label}>Account number</label>
+          <input style={S.input} value={acctNum} inputMode="text"
+            onChange={(e) => setAcctNum(e.target.value)}
+            placeholder="e.g., 4471 or ****4471" />
+          <p style={S.hint}>
+            The last 4 digits are usually all you need to identify yourself on a call — and safer to store.
+          </p>
+
+          <label style={S.label}>Customer service phone</label>
+          <input style={S.input} type="tel" inputMode="tel" value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="(501) 555-0142" />
+
+          <label style={S.label}>Notes</label>
+          <textarea style={{ ...S.input, minHeight: 74, resize: "vertical", fontFamily: "inherit" }}
+            value={notes} onChange={(e) => setNotes(e.target.value)}
+            placeholder="Login, due-date quirks, who to ask for, plan details…" />
+
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button style={S.saveBtn} onClick={save}>Save</button>
             <button style={S.cancelBtn} onClick={() => { setEditing(null); setScanNote(null); }}>Cancel</button>
@@ -580,11 +644,68 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
               </div>
               <button style={S.iconBtn} title="Payment history"
                 onClick={() => openHistory(b)}>📊</button>
+              {(b.account_number || b.phone || b.notes) && (
+                <button style={S.iconBtn} title="Account details"
+                  onClick={() => setDetails(b)}>
+                  <InfoIcon size={15} color="#6b7c8c" />
+                </button>
+              )}
               <button style={S.iconBtn} onClick={() => startEdit(b)}>✎</button>
               <button style={{ ...S.iconBtn, color: "#c0392b" }} onClick={() => remove(b)}>✕</button>
             </div>
           );
         })
+      )}
+
+      {/* ---- account details ---- */}
+      {details && (
+        <div style={S.modalWrap} onClick={() => setDetails(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalName}>{details.name}</div>
+            <p style={S.modalSub}>Account details</p>
+
+            {details.account_number && (
+              <div style={S.detailBlock}>
+                <div style={S.detailLabel}>Account number</div>
+                <div style={S.detailRow}>
+                  <span style={S.detailMono}>{details.account_number}</span>
+                  <button style={S.copyBtn} onClick={() => copyText(details.account_number)}>
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {details.phone && (
+              <div style={S.detailBlock}>
+                <div style={S.detailLabel}>Customer service</div>
+                <div style={S.detailRow}>
+                  <a href={`tel:${details.phone.replace(/[^\d+]/g, "")}`} style={S.detailLink}>
+                    {details.phone}
+                  </a>
+                  <button style={S.copyBtn} onClick={() => copyText(details.phone)}>
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {details.notes && (
+              <div style={S.detailBlock}>
+                <div style={S.detailLabel}>Notes</div>
+                <div style={S.detailNotes}>{details.notes}</div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button style={S.saveBtn}
+                onClick={() => { const b = details; setDetails(null); startEdit(b); }}>
+                Edit
+              </button>
+              <button style={S.cancelBtn} onClick={() => setDetails(null)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ---- what did it actually cost this month? ---- */}
@@ -709,6 +830,20 @@ const S = {
   chip: { padding: "6px 11px", borderRadius: 20, border: "1.5px solid #dce5ec",
     background: "#fff", color: "#5a6b7a", fontWeight: 600, fontSize: 12, cursor: "pointer" },
   chipOn: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
+  divider: { height: 1, background: "#e3ebf0", margin: "16px 0 4px" },
+  detailBlock: { marginTop: 12 },
+  detailLabel: { fontSize: 10.5, fontWeight: 700, color: "#9aa8b5",
+    textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 },
+  detailRow: { display: "flex", alignItems: "center", gap: 8,
+    background: "#f4f8fa", border: "1px solid #e3ebf0", borderRadius: 8, padding: "9px 10px" },
+  detailMono: { flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontSize: 15, fontWeight: 600, color: "#22303c", wordBreak: "break-all" },
+  detailLink: { flex: 1, fontSize: 15, fontWeight: 700, color: "#2c5f7c", textDecoration: "none" },
+  copyBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 6,
+    padding: "5px 10px", fontSize: 11.5, fontWeight: 700, color: "#2c5f7c",
+    cursor: "pointer", flexShrink: 0 },
+  detailNotes: { background: "#f4f8fa", border: "1px solid #e3ebf0", borderRadius: 8,
+    padding: "9px 10px", fontSize: 13.5, color: "#3d4c59", whiteSpace: "pre-wrap", lineHeight: 1.45 },
   saveBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none",
     borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: "pointer" },
   cancelBtn: { flex: 1, background: "#fff", color: "#6b7c8c", border: "1.5px solid #c5d4de",
