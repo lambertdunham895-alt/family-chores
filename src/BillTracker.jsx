@@ -108,6 +108,19 @@ const todayYmd = () => {
 };
 const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+/* supabase-js reports any non-2xx as "Edge Function returned a non-2xx status code"
+   and hides the body. Dig the real message out so errors are actually readable. */
+async function realError(error, data) {
+  if (data && data.error) return data.error;
+  try {
+    if (error && error.context && typeof error.context.json === "function") {
+      const body = await error.context.json();
+      if (body && body.error) return body.error;
+    }
+  } catch (e) { /* fall through to the generic message */ }
+  return (error && error.message) || "Scan failed.";
+}
+
 function copyText(t) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -280,8 +293,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
           today: todayYmd(),
         },
       });
-      if (error) throw new Error(error.message || "Scan failed");
-      if (data && data.error) throw new Error(data.error);
+      if (error || (data && data.error)) throw new Error(await realError(error, data));
 
       const r = Array.isArray(data && data.results) ? data.results[0] : null;
       if (!r) throw new Error("Nothing readable in that photo.");
