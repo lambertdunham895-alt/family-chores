@@ -85,6 +85,19 @@ function compressForOCR(file, maxDim = 1600, quality = 0.85) {
   });
 }
 
+/* supabase-js reports any non-2xx as "Edge Function returned a non-2xx status code"
+   and hides the body. Dig the real message out so errors are actually readable. */
+async function realError(error, data) {
+  if (data && data.error) return data.error;
+  try {
+    if (error && error.context && typeof error.context.json === "function") {
+      const body = await error.context.json();
+      if (body && body.error) return body.error;
+    }
+  } catch (e) { /* fall through to the generic message */ }
+  return (error && error.message) || "Scan failed.";
+}
+
 const uid = () => `d${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
 const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isHm = (s) => typeof s === "string" && /^\d{2}:\d{2}$/.test(s);
@@ -248,8 +261,7 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
           today: ymd(new Date()),
         },
       });
-      if (error) throw new Error(error.message || "Scan failed");
-      if (data && data.error) throw new Error(data.error);
+      if (error || (data && data.error)) throw new Error(await realError(error, data));
 
       const rows = Array.isArray(data && data.results) ? data.results : [];
       const clean = rows
@@ -274,6 +286,12 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
       } else {
         setEditing(null);
         setDrafts(clean);
+        if (data && data.truncated) {
+          setScanError(
+            `That schedule was long — I got the first ${clean.length} events. ` +
+            `Scan the rest of the page separately to catch the remainder.`
+          );
+        }
       }
     } catch (err) {
       console.error(err);
