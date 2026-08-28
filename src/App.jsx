@@ -1481,50 +1481,128 @@ function PinLock({ onUnlock }) {
   );
 }
 
+
+/* ---- stroke icons for the hub (Lucide-style, no emoji) ---- */
+function HubIcon({ name, size = 30 }) {
+  const c = {
+    width: size, height: size, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.6,
+    strokeLinecap: "round", strokeLinejoin: "round",
+    style: { display: "block" },
+  };
+  if (name === "calendar") return (
+    <svg {...c}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+      <circle cx="8.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="14.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="14.5" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+  if (name === "chores") return (
+    <svg {...c}>
+      <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z" />
+      <path d="M8 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2" />
+      <path d="M9 13l2 2 4-4" />
+    </svg>
+  );
+  if (name === "games") return (
+    <svg {...c}>
+      <path d="M6.5 8h11a4.5 4.5 0 0 1 4.4 5.4l-.8 4A2.6 2.6 0 0 1 16.8 19c-.8 0-1.5-.4-2-1l-1-1.4h-3.6L9.2 18c-.5.6-1.2 1-2 1a2.6 2.6 0 0 1-2.5-2.1l-.8-4A4.5 4.5 0 0 1 6.5 8z" />
+      <path d="M8 11.5v2M7 12.5h2" />
+      <circle cx="15.5" cy="12" r=".9" fill="currentColor" stroke="none" />
+      <circle cx="17.5" cy="14" r=".9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+  if (name === "grocery") return (
+    <svg {...c}>
+      <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.3 16h7.9a2 2 0 0 0 2-1.6L21 7H6" />
+      <circle cx="10" cy="20" r="1.4" />
+      <circle cx="18" cy="20" r="1.4" />
+    </svg>
+  );
+  if (name === "bills") return (
+    <svg {...c}>
+      <path d="M6 3l1.5 1.4L9 3l1.5 1.4L12 3l1.5 1.4L15 3l1.5 1.4L18 3v16.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19.5z" />
+      <path d="M9.5 8.5h5M9.5 12h5M9.5 15.5h3" />
+    </svg>
+  );
+  if (name === "lock") return (
+    <svg {...c} strokeWidth="1.8">
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
+    </svg>
+  );
+  return null;
+}
+
 /* ---------------- Landing hub (first screen after PIN) ---------------- */
 function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
+  const [hover, setHover] = React.useState(null);
+
   const handleLock = () => {
     if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
     try { localStorage.removeItem("family_pin_unlock"); } catch {}
     window.location.reload();
   };
+
+  const TILES = [
+    { id: "calendar", icon: "calendar", name: "Calendar",  sub: "Who's doing what & dinner", onClick: onCalendar },
+    { id: "chores",   icon: "chores",   name: "Chores",    sub: "Today's tasks & Quest mode", onClick: onChores },
+    { id: "games",    icon: "games",    name: "Games",     sub: "Play together as a family",  onClick: onGames },
+    { id: "grocery",  icon: "grocery",  name: "Groceries", sub: "Shared list, synced live",   onClick: onGrocery },
+    { id: "bills",    icon: "bills",    name: "Bills",     sub: "What's due & what's paid",   onClick: onBills },
+  ];
+
   return (
     <div style={S.hubScreen}>
+      <div style={S.hubGlow} />
       <div style={S.hubInner}>
+
+        <div style={S.hubCrest}>
+          <img src="/icon-192.png" alt="" style={S.hubCrestImg} />
+        </div>
         <h1 style={S.hubTitle}>The Dunham House</h1>
-        <p style={S.hubSub}>Welcome home! Pick what you're doing.</p>
+        <div style={S.hubRule} />
+        <p style={S.hubSub}>Welcome home. Pick what you're doing.</p>
+
         <div style={S.hubGrid}>
-          <button style={{ ...S.hubTile, ...S.hubTileCal }} onClick={onCalendar}>
-            <span style={S.hubIcon}>📅</span>
-            <span style={S.hubTileName}>Calendar</span>
-            <span style={S.hubTileSub}>Who's doing what &amp; dinner</span>
-          </button>
-          <button style={{ ...S.hubTile, ...S.hubTileChores }} onClick={onChores}>
-            <span style={S.hubIcon}>📋</span>
-            <span style={S.hubTileName}>Chores</span>
-            <span style={S.hubTileSub}>Today's tasks &amp; Quest mode</span>
-          </button>
-          <button style={{ ...S.hubTile, ...S.hubTileGames }} onClick={onGames}>
-            <span style={S.hubIcon}>🎮</span>
-            <span style={S.hubTileName}>Games</span>
-            <span style={S.hubTileSub}>Play together as a family</span>
-          </button>
-          <button style={{ ...S.hubTile, ...S.hubTileGrocery }} onClick={onGrocery}>
-            <span style={S.hubIcon}>🛒</span>
-            <span style={S.hubTileName}>Groceries</span>
-            <span style={S.hubTileSub}>Shared list, synced live</span>
-          </button>
-          <button style={{ ...S.hubTile, ...S.hubTileBills }} onClick={onBills}>
-            <span style={S.hubIcon}>🧾</span>
-            <span style={S.hubTileName}>Bills</span>
-            <span style={S.hubTileSub}>What's due &amp; what's paid</span>
+          {TILES.map((t, i) => {
+            const on = hover === t.id;
+            const wide = i === TILES.length - 1 && TILES.length % 2 === 1;
+            return (
+              <button
+                key={t.id}
+                onClick={t.onClick}
+                onMouseEnter={() => setHover(t.id)}
+                onMouseLeave={() => setHover(null)}
+                onTouchStart={() => setHover(t.id)}
+                onTouchEnd={() => setHover(null)}
+                style={{
+                  ...S.hubTile,
+                  ...(wide ? S.hubTileWide : {}),
+                  ...(on ? S.hubTileOn : {}),
+                }}
+              >
+                <span style={{ ...S.hubIconWrap, ...(on ? S.hubIconWrapOn : {}) }}>
+                  <HubIcon name={t.icon} size={wide ? 28 : 30} />
+                </span>
+                <span style={S.hubTileText}>
+                  <span style={S.hubTileName}>{t.name}</span>
+                  <span style={S.hubTileSub}>{t.sub}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 26 }}>
+          <button style={S.hubLock} onClick={handleLock}>
+            <HubIcon name="lock" size={13} />
+            <span>Lock this device</span>
           </button>
         </div>
-        <div style={{ textAlign: "center", marginTop: 28 }}>
-          <button style={{ ...S.switchBtn, fontSize: 12 }} onClick={handleLock}>
-            🔒 Lock this device
-          </button>
-        </div>
+
       </div>
     </div>
   );
@@ -1724,20 +1802,59 @@ const S = {
   todayFilterBtn: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
   todayFilterBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
   // Landing hub
-  hubScreen: { minHeight: "100vh", background: "linear-gradient(135deg,#f0f6fa 0%,#e3edf3 100%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 },
-  hubInner: { maxWidth: 560, width: "100%" },
-  hubTitle: { textAlign: "center", color: "#2c5f7c", fontSize: 32, margin: 0, fontWeight: 800, letterSpacing: 0.5 },
-  hubSub: { textAlign: "center", color: "#6b7c8c", fontSize: 15, marginTop: 6, marginBottom: 28 },
-  hubGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
-  hubTile: { background: "#fff", border: "3px solid", borderRadius: 20, padding: "28px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer", boxShadow: "0 4px 14px rgba(44,95,124,0.10)", transition: "transform 0.15s" },
-  hubTileChores: { borderColor: "#2c5f7c" },
-  hubTileGames: { borderColor: "#7c4adb" },
-  hubTileCal: { borderColor: "#7c4adb" },
-  hubTileGrocery: { borderColor: "#3d7a4e" },
-  hubTileBills: { borderColor: "#c78a2c" },
-  hubIcon: { fontSize: 56, lineHeight: 1 },
-  hubTileName: { fontSize: 20, fontWeight: 800, color: "#1a2b3c", marginTop: 6 },
-  hubTileSub: { fontSize: 12, color: "#6b7c8c", textAlign: "center", lineHeight: 1.3 },
+  /* ---- landing hub: black + gold, matched to the app icon ---- */
+  hubScreen: { position: "relative", minHeight: "100vh", overflow: "hidden",
+    background: "radial-gradient(120% 90% at 50% -10%, #17181c 0%, #0b0b0d 55%, #060607 100%)",
+    display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 20px" },
+  hubGlow: { position: "absolute", top: "-28%", left: "50%", transform: "translateX(-50%)",
+    width: 620, height: 620, pointerEvents: "none",
+    background: "radial-gradient(circle, rgba(214,166,78,0.16) 0%, rgba(214,166,78,0.05) 42%, rgba(0,0,0,0) 70%)" },
+  hubInner: { position: "relative", maxWidth: 560, width: "100%" },
+
+  hubCrest: { display: "flex", justifyContent: "center", marginBottom: 16 },
+  hubCrestImg: { width: 76, height: 76, borderRadius: 18, display: "block",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.65), 0 0 0 1px rgba(214,166,78,0.28)" },
+
+  hubTitle: { textAlign: "center", margin: 0, fontSize: 30, fontWeight: 700,
+    letterSpacing: 1.2, lineHeight: 1.15,
+    fontFamily: "Georgia, 'Times New Roman', serif",
+    background: "linear-gradient(180deg,#f4dfae 0%,#d6a64e 52%,#a97c2e 100%)",
+    WebkitBackgroundClip: "text", backgroundClip: "text",
+    WebkitTextFillColor: "transparent", color: "#d6a64e" },
+  hubRule: { width: 92, height: 1, margin: "14px auto 0",
+    background: "linear-gradient(90deg,rgba(214,166,78,0) 0%,rgba(214,166,78,0.85) 50%,rgba(214,166,78,0) 100%)" },
+  hubSub: { textAlign: "center", color: "#8b8b93", fontSize: 13.5,
+    letterSpacing: 0.3, marginTop: 12, marginBottom: 26 },
+
+  hubGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  hubTile: { position: "relative", textAlign: "left",
+    background: "linear-gradient(160deg,rgba(255,255,255,0.055) 0%,rgba(255,255,255,0.018) 100%)",
+    border: "1px solid rgba(214,166,78,0.20)", borderRadius: 16,
+    padding: "18px 16px", display: "flex", flexDirection: "column",
+    alignItems: "flex-start", gap: 13, cursor: "pointer",
+    color: "#d6a64e", WebkitTapHighlightColor: "transparent",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
+    transition: "transform .18s ease, border-color .18s ease, box-shadow .18s ease" },
+  hubTileWide: { gridColumn: "1 / -1", flexDirection: "row", alignItems: "center", gap: 15,
+    padding: "16px 18px" },
+  hubTileOn: { transform: "translateY(-2px)", borderColor: "rgba(214,166,78,0.62)",
+    boxShadow: "0 10px 28px rgba(0,0,0,0.6), 0 0 0 1px rgba(214,166,78,0.16)" },
+
+  hubIconWrap: { display: "flex", alignItems: "center", justifyContent: "center",
+    width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+    background: "rgba(214,166,78,0.10)", border: "1px solid rgba(214,166,78,0.22)",
+    color: "#e6c583", transition: "background .18s ease, color .18s ease" },
+  hubIconWrapOn: { background: "rgba(214,166,78,0.19)", color: "#f6e3b8" },
+
+  hubTileText: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0 },
+  hubTileName: { fontSize: 16.5, fontWeight: 700, color: "#f0e6d2", letterSpacing: 0.2 },
+  hubTileSub: { fontSize: 11.5, color: "#8b8b93", lineHeight: 1.35 },
+
+  hubLock: { display: "inline-flex", alignItems: "center", gap: 7,
+    background: "transparent", border: "1px solid rgba(255,255,255,0.13)",
+    color: "#7e7e87", borderRadius: 999, padding: "9px 18px",
+    fontSize: 12, fontWeight: 600, cursor: "pointer",
+    WebkitTapHighlightColor: "transparent" },
   // Games hub
   gamesHubBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "2px solid #e3ebf0", marginBottom: 18 },
   gamesHubTitle: { color: "#7c4adb", fontSize: 20, margin: 0, fontWeight: 800 },
