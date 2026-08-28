@@ -18,7 +18,11 @@ self.addEventListener("push", (event) => {
       body: d.body,
       tag: d.tag,                 // same tag replaces, so 5 edits don't stack 5 notifications
       renotify: true,
-      badge: "/icon-192.png",
+      // badge = the small status-bar stencil. Android throws away all colour and
+      // uses only the alpha channel, so this MUST be white-on-transparent or it
+      // renders as a solid white square.
+      badge: "/notif-icon.png",
+      // icon = the larger image beside the text; this one keeps its colour.
       icon: "/icon-192.png",
       data: { url: d.url || "/" },
       vibrate: [80, 40, 80],
