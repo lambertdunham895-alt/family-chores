@@ -41,6 +41,26 @@ function prettyTime(t) {
 }
 
 /* ---- stroke icon (Lucide style) for the scan button ---- */
+/* "Tue, Sep 8" — short and unambiguous inside a notification */
+function prettyDay(ymdStr) {
+  try {
+    const d = fromYmd(ymdStr);
+    return `${DOW[d.getDay()]}, ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getDate()}`;
+  } catch (e) { return ymdStr; }
+}
+
+function BellIcon({ size = 16, color = "currentColor", off }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ display: "block" }}>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
 function ScanIcon({ size = 16, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -102,6 +122,88 @@ const uid = () => `d${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
 const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isHm = (s) => typeof s === "string" && /^\d{2}:\d{2}$/.test(s);
 
+/* ---------- web push client helpers ---------- */
+const VAPID_PUBLIC = "BPvI57yOmOGU3HDKgIzSoJwDE5H1l9ngqufokZraxCqK0wYHGVlt3Jnr4Vb7VfTyxUrBZfTQa-4M-B18l77mRY4";
+
+function urlB64ToUint8(base64String) {
+  const pad = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const b64 = (base64String + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+const pushSupported = () =>
+  typeof window !== "undefined" &&
+  "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+async function currentPushState() {
+  if (!pushSupported()) return "unsupported";
+  if (Notification.permission === "denied") return "blocked";
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+    if (!reg) return "off";
+    const sub = await reg.pushManager.getSubscription();
+    return sub ? "on" : "off";
+  } catch (e) { return "off"; }
+}
+
+async function enablePush(supabase, profile) {
+  if (!pushSupported()) throw new Error("This browser can't do notifications.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") {
+    throw new Error(perm === "denied"
+      ? "Notifications are blocked. Turn them back on in your browser's site settings."
+      : "Notifications weren't allowed.");
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8(VAPID_PUBLIC),
+    });
+  }
+  const j = sub.toJSON();
+  const { error } = await supabase.from("push_subscriptions").upsert({
+    endpoint: j.endpoint,
+    p256dh: j.keys.p256dh,
+    auth: j.keys.auth,
+    profile_id: profile?.id || null,
+    label: profile?.name || null,
+  }, { onConflict: "endpoint" });
+  if (error) throw new Error("Couldn't save this device.");
+  return true;
+}
+
+async function disablePush(supabase) {
+  const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+  if (!reg) return;
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    const ep = sub.endpoint;
+    await sub.unsubscribe();
+    await supabase.from("push_subscriptions").delete().eq("endpoint", ep);
+  }
+}
+
+/* Fire and forget — a notification failing must never block saving an event. */
+function notifyFamily(supabase, profile, message, title) {
+  try {
+    supabase.functions.invoke("send-push", {
+      body: {
+        title: title || "Family Calendar",
+        message,
+        url: "/",
+        tag: "calendar",
+        exclude: profile?.id || null,
+      },
+    }).catch(() => {});
+  } catch (e) { /* never surface push problems to the user mid-save */ }
+}
+
 export default function FamilyCalendar({ supabase, profile, onBack, credsMissing }) {
   const today = new Date();
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -130,6 +232,10 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
   const [scanError, setScanError] = useState(null);
   const [drafts, setDrafts] = useState(null);   // null = no review open
   const [saving, setSaving] = useState(false);
+
+  // notifications
+  const [pushState, setPushState] = useState("off");   // on | off | blocked | unsupported
+  const [pushBusy, setPushBusy] = useState(false);
 
   const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1800); };
 
@@ -206,11 +312,17 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
         setEvents((p) => p.map((x) => (x.id === editing.id ? { ...x, ...payload } : x)));
         await supabase.from("events").update(payload).eq("id", editing.id);
         flash("Event updated");
+        notifyFamily(supabase, profile,
+          `${payload.title} changed — ${prettyDay(payload.day)}${payload.start_time ? " at " + prettyTime(payload.start_time) : ""}`,
+          "Calendar updated");
       } else {
         const { data, error } = await supabase.from("events").insert(payload).select().single();
         if (error) throw error;
         setEvents((p) => [...p, data]);
         flash("Event added");
+        notifyFamily(supabase, profile,
+          `${payload.title} — ${prettyDay(payload.day)}${payload.start_time ? " at " + prettyTime(payload.start_time) : ""}`,
+          "New on the calendar");
       }
       setEditing(null);
     } catch (e) { console.error(e); flash("Couldn't save"); load(); }
@@ -219,8 +331,10 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
   const removeEvent = async (e) => {
     if (!confirm(`Delete "${e.title}"?`)) return;
     setEvents((p) => p.filter((x) => x.id !== e.id));
-    try { await supabase.from("events").delete().eq("id", e.id); }
-    catch (err) { console.error(err); load(); }
+    try {
+      await supabase.from("events").delete().eq("id", e.id);
+      notifyFamily(supabase, profile, `${e.title} on ${prettyDay(e.day)} was removed`, "Calendar updated");
+    } catch (err) { console.error(err); load(); }
   };
 
   const saveMeal = async () => {
@@ -323,6 +437,11 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
       setEvents((p) => [...p, ...(data || [])]);
       setDrafts(null);
       flash(`Added ${rows.length} event${rows.length === 1 ? "" : "s"}`);
+      notifyFamily(supabase, profile,
+        rows.length === 1
+          ? `${rows[0].title} — ${prettyDay(rows[0].day)}`
+          : `${rows.length} events added, starting ${prettyDay(rows[0].day)}`,
+        "New on the calendar");
       // jump to the first one so it's visible
       const firstDay = rows[0].day;
       const fd = fromYmd(firstDay);
@@ -334,6 +453,21 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
       load();
     }
     setSaving(false);
+  };
+
+  useEffect(() => { currentPushState().then(setPushState); }, []);
+
+  const togglePush = async () => {
+    setPushBusy(true);
+    try {
+      if (pushState === "on") { await disablePush(supabase); setPushState("off"); flash("Notifications off"); }
+      else { await enablePush(supabase, profile); setPushState("on"); flash("Notifications on for this device"); }
+    } catch (err) {
+      console.error(err);
+      flash(err.message || "Couldn't change notifications");
+      setPushState(await currentPushState());
+    }
+    setPushBusy(false);
   };
 
   const selDate = fromYmd(selected);
@@ -432,6 +566,20 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
         </div>
         {!editing && !drafts && (
           <div style={{ display: "flex", gap: 8 }}>
+            {pushState !== "unsupported" && (
+              <button
+                style={{ ...S.bellBtn, ...(pushState === "on" ? S.bellOn : {}),
+                         ...(pushBusy ? { opacity: 0.5 } : {}) }}
+                disabled={pushBusy}
+                title={pushState === "on" ? "Notifications on for this device"
+                       : pushState === "blocked" ? "Notifications blocked in browser settings"
+                       : "Turn on notifications for this device"}
+                onClick={togglePush}
+              >
+                <BellIcon size={16} color={pushState === "on" ? "#fff" : "#6b7c8c"}
+                          off={pushState !== "on"} />
+              </button>
+            )}
             <button
               style={{ ...S.scanBtn, ...(scanning ? { opacity: 0.6 } : {}) }}
               disabled={scanning}
@@ -737,6 +885,10 @@ const S = {
   iconBtn: { background: "none", border: "none", fontSize: 14, cursor: "pointer",
     padding: "4px 5px", opacity: 0.6 },
   empty: { textAlign: "center", padding: "30px 20px" },
+  bellBtn: { display: "flex", alignItems: "center", justifyContent: "center",
+    background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 8,
+    padding: "8px 10px", cursor: "pointer" },
+  bellOn: { background: "#2c5f7c", borderColor: "#2c5f7c" },
   scanBtn: { display: "flex", alignItems: "center", gap: 6, background: "#fff",
     color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 8,
     padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
