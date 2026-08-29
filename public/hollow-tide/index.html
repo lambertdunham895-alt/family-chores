@@ -115,7 +115,7 @@ const PATH=[[125.9, 393.1], [149.9, 407.5], [179.9, 431.2], [219.7, 460.2], [262
 const PATH_W=30;                 /* painted road is ~30px wide in this space */
 
 /* The 12 turret pads, taken from the glowing rings on the map. */
-const PADS=[[142, 538], [277, 380], [506, 561], [623, 245], [668, 773], [752, 610], [926, 742], [1052, 227], [1089, 513], [1297, 309], [1313, 692], [1524, 498]];
+const PADS=[[143, 537], [276, 382], [443, 296], [503, 564], [621, 257], [667, 773], [757, 615], [920, 741], [1052, 227], [1089, 515], [1297, 308], [1302, 500], [1312, 693], [1523, 495]];
 
 function pathLen(p){let L=0;for(let i=1;i<p.length;i++)L+=dist(p[i-1][0],p[i-1][1],p[i][0],p[i][1]);return L;}
 const PATH_LEN=pathLen(PATH);
@@ -144,7 +144,7 @@ function distToPath(px,py){
    Ranges are large because the pads sit 65-145px off the road on this map. */
 const TOWERS={
   harpoon:{name:"Harpoon Rig",cost:85,  desc:"Single target. Heavy damage, slow reload. Punches through armour.",
-    tiers:[{dmg:23,rate:1.0,range:250},{dmg:39,rate:.9,range:278},{dmg:68,rate:.78,range:310}],
+    tiers:[{dmg:28,rate:1.05,range:250},{dmg:47,rate:.95,range:278},{dmg:82,rate:.82,range:310}],
     up:[100,190], shot:"p_harpoon", pierceArmor:.35},
   sonar:{name:"Sonar Pulse",cost:95,   desc:"Damages everything in range. Good on packs.",
     tiers:[{dmg:12,rate:1.45,range:215,cap:5},{dmg:20,rate:1.32,range:240,cap:6},{dmg:32,rate:1.15,range:268,cap:8}],
@@ -257,7 +257,7 @@ const LANE = PATH_W*0.42;          // how far off centre a creature may drift
 function spawn(type,elite,isBoss){
   const B=isBoss?BOSSES[type]:ENEMIES[type];
   const m=isBoss?1:(elite?1.75:1);
-  const hp=Math.round(B.hp*m*(1+S.wave*0.105));
+  const hp=Math.round(B.hp*m*(1+S.wave*0.115));
   // Bosses hold the centre line; everything else spreads across the lane and
   // varies its pace, which is what turns a queue into a crowd.
   const off  = isBoss ? 0 : (Math.random()*2-1)*LANE;
