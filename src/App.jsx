@@ -6,6 +6,7 @@ import ConnectFour from "./games/ConnectFour.jsx";
 import KingsAdvance from "./games/KingsAdvance.jsx";
 import PinballGame from "./games/PinballGame.jsx";
 import StellarSiegeGame from "./games/StellarSiegeGame.jsx";
+import HollowTideGame from "./games/HollowTideGame.jsx";
 import GroceryList from "./GroceryList.jsx";
 import BillTracker from "./BillTracker.jsx";
 import FamilyCalendar from "./FamilyCalendar.jsx";
@@ -63,6 +64,14 @@ const GAMES = [
     icon: "🚀",
     color: "#22d3ee",
     component: StellarSiegeGame,
+  },
+  {
+    id: "hollowtide",
+    name: "Hollow Tide",
+    description: "Hold the trench station against what comes up from the dark",
+    icon: "🌊",
+    color: "#0e7490",
+    component: HollowTideGame,
   },
   // Add more games here as you build them:
   // { id: "memory", name: "Memory Match", description: "...", icon: "🧠", color: "#3d7a4e", component: MemoryGame },
