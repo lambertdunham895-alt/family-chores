@@ -9,6 +9,7 @@
 html,body{height:100%;overflow:hidden;background:#04101f;
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#dbeafe;
   user-select:none;-webkit-user-select:none}
+#stage{position:absolute;top:0;left:0;width:100%;height:100%;transform-origin:0 0}
 #cv{position:absolute;inset:0;display:block;touch-action:none}
 #hud{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;
   padding:8px 12px;background:linear-gradient(180deg,rgba(4,16,31,.92),rgba(4,16,31,0));
@@ -62,12 +63,15 @@ html,body{height:100%;overflow:hidden;background:#04101f;
   justify-content:center;gap:16px;background:#04101f;z-index:20;text-align:center;padding:30px}
 #rotate .rt{font-size:19px;font-weight:800;color:#e0f2fe}
 #rotate .rs{font-size:13.5px;color:#8ea3b8;max-width:280px;line-height:1.5}
+#anywayBtn{background:transparent;border:1px solid rgba(127,233,255,.35);color:#7fe9ff;
+  border-radius:999px;padding:10px 22px;font-weight:700;font-size:13px;cursor:pointer}
 .phone{width:52px;height:88px;border:3px solid #7fe9ff;border-radius:10px;
   animation:tip 1.8s ease-in-out infinite}
 @keyframes tip{0%,40%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
 </style>
 </head>
 <body>
+<div id="stage">
 <canvas id="cv"></canvas>
 
 <div id="hud">
@@ -88,10 +92,13 @@ html,body{height:100%;overflow:hidden;background:#04101f;
   <button id="againBtn">Dive Again</button>
 </div>
 
+</div>
+
 <div id="rotate">
   <div class="phone"></div>
   <div class="rt">Turn your phone sideways</div>
-  <div class="rs">Hollow Tide is played in landscape — the trench is wider than it is tall.</div>
+  <div class="rs">Hollow Tide plays in landscape. Turn the phone and it will fill the screen.</div>
+  <button id="anywayBtn">Play in portrait anyway</button>
 </div>
 
 <script>
@@ -203,14 +210,36 @@ function buildWaves(){
 let CV,CTX,DPR=1,SC=1,OX=0,OY=0;
 const IMG={};
 
+/* The app is installed portrait-locked, so when the phone is held sideways the
+   OS does not rotate anything. We rotate the whole stage ourselves instead, which
+   means the game fills the screen either way and needs no reinstall. */
+let ROT=false, S_forcePortrait=false;
+
 function fit(){
-  const w=window.innerWidth,h=window.innerHeight;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  ROT = (vh > vw*1.05) && !S_forcePortrait;
+  const stage=document.getElementById("stage");
+  // when rotated the stage is laid out landscape, then turned 90 degrees
+  const w = ROT? vh : vw;
+  const h = ROT? vw : vh;
+  if(stage){
+    stage.style.width=w+"px";
+    stage.style.height=h+"px";
+    stage.style.transform = ROT ? `rotate(90deg) translateY(-${h}px)` : "none";
+  }
   DPR=Math.min(window.devicePixelRatio||1,2.5);
   CV.width=Math.round(w*DPR); CV.height=Math.round(h*DPR);
   CV.style.width=w+"px"; CV.style.height=h+"px";
   SC=Math.min(w/VW,h/VH); OX=(w-VW*SC)/2; OY=(h-VH*SC)/2;
 }
-const toWorld=(cx,cy)=>({x:(cx-OX)/SC,y:(cy-OY)/SC});
+
+function toWorld(cx,cy){
+  // undo the stage rotation before undoing the letterbox fit
+  let sx,sy;
+  if(ROT){ sx = cy;                       sy = window.innerWidth - cx; }
+  else   { sx = cx;                       sy = cy; }
+  return {x:(sx-OX)/SC, y:(sy-OY)/SC};
+}
 
 /* ---- state ---- */
 let S=null;
@@ -691,8 +720,9 @@ function tap(cx,cy){
 }
 
 function checkOrientation(){
-  const portrait=window.innerHeight>window.innerWidth*1.05;
-  $("rotate").style.display=portrait?"flex":"none";
+  // With the stage rotation in place the game always fits, so the gate only
+  // shows if the player explicitly chose portrait and the screen is very tall.
+  $("rotate").style.display="none";
 }
 
 function bindInput(){
@@ -700,6 +730,8 @@ function bindInput(){
   $("startBtn").onclick=()=>{startWave();syncHUD();};
   $("spdBtn").onclick=()=>{S.speed=S.speed===1?2:S.speed===2?3:1;syncHUD();};
   $("againBtn").onclick=()=>{newGame();$("over").style.display="none";syncHUD();};
+  const aw=$("anywayBtn");
+  if(aw) aw.onclick=()=>{S_forcePortrait=true;fit();checkOrientation();syncHUD();};
   window.addEventListener("resize",()=>{fit();checkOrientation();});
   window.addEventListener("orientationchange",()=>setTimeout(()=>{fit();checkOrientation();},220));
   window.addEventListener("keydown",e=>{
