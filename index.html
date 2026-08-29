@@ -2,15 +2,30 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#2c5f7c" />
+    <meta name="theme-color" content="#0b0b0d" />
 
     <title>Dunham Family</title>
+
+    <style>
+      /* The browser's default body margin was drawing a white frame on all four
+         sides. Inner screens have no background of their own and rely on the page
+         being white, so only the margin is removed here — not the colour. */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: #ffffff;
+        -webkit-font-smoothing: antialiased;
+      }
+      #root { min-height: 100vh; }
+      /* stops the rubber-band overscroll flashing white above the dark hub */
+      html { overscroll-behavior-y: none; background: #0b0b0d; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
