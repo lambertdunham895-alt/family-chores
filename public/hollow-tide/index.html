@@ -168,11 +168,16 @@ const ENEMIES={
   jelly: {name:"Jelly",  hp:72,  speed:87,  bounty:11, sprite:"e_jelly",  size:42, slowImmune:true},
   angler:{name:"Angler", hp:190, speed:57,  bounty:22, sprite:"e_angler", size:52, stun:true},
 };
+/* Boss HP is absolute — it deliberately does NOT use the per-wave scaling that
+   trash enemies get. These numbers were measured against what a realistic build
+   can actually deliver by the wave each boss appears on, with roughly a 25%
+   margin so a good board wins and a thin one does not. Armour is lighter than
+   before so chain and splash builds are not simply locked out. */
 const BOSSES={
-  crabking: {name:"Crab King",  hp:2400, speed:45, bounty:180, sprite:"b_crabking",  size:96, armor:.55},
-  matriarch:{name:"Matriarch",  hp:3100, speed:57, bounty:230, sprite:"b_matriarch", size:99, slowImmune:true},
-  ancient:  {name:"The Ancient",hp:4200, speed:45, bounty:300, sprite:"b_ancient",   size:104, stun:true},
-  squid:    {name:"Colossus",   hp:6000, speed:51, bounty:420, sprite:"b_squid",     size:114, armor:.35},
+  crabking: {name:"Crab King",  hp:1650,  speed:45, bounty:180, sprite:"b_crabking",  size:96,  armor:.34},
+  matriarch:{name:"Matriarch",  hp:4400,  speed:57, bounty:230, sprite:"b_matriarch", size:99,  slowImmune:true},
+  ancient:  {name:"The Ancient",hp:8300,  speed:45, bounty:300, sprite:"b_ancient",   size:104, stun:true, armor:.20},
+  squid:    {name:"Colossus",   hp:6600,  speed:51, bounty:420, sprite:"b_squid",     size:114, armor:.25},
 };
 
 function buildWaves(){
@@ -257,7 +262,8 @@ const LANE = PATH_W*0.42;          // how far off centre a creature may drift
 function spawn(type,elite,isBoss){
   const B=isBoss?BOSSES[type]:ENEMIES[type];
   const m=isBoss?1:(elite?1.75:1);
-  const hp=Math.round(B.hp*m*(1+S.wave*0.115));
+  // bosses carry their own absolute HP; only trash scales with the wave number
+  const hp=isBoss ? B.hp : Math.round(B.hp*m*(1+S.wave*0.135));
   // Bosses hold the centre line; everything else spreads across the lane and
   // varies its pace, which is what turns a queue into a crowd.
   const off  = isBoss ? 0 : (Math.random()*2-1)*LANE;
