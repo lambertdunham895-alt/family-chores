@@ -24,31 +24,31 @@ html,body{height:100%;overflow:hidden;background:#04101f;
 #spdBtn{background:rgba(6,22,40,.9);color:#7fe9ff;border:1px solid rgba(127,233,255,.32);
   border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;min-width:44px}
 
-#panel{position:absolute;right:10px;top:52px;bottom:10px;width:250px;overflow-y:auto;
-  display:none;background:rgba(4,14,26,.95);border:1.5px solid rgba(127,233,255,.3);
-  border-radius:12px;padding:12px}
-.ph{font-weight:800;font-size:15px;margin-bottom:3px}
+#panel{position:absolute;left:8px;right:8px;bottom:8px;display:none;
+  background:rgba(4,14,26,.96);border:1.5px solid rgba(127,233,255,.32);
+  border-radius:14px;padding:10px 12px 12px}
+.ph{font-weight:800;font-size:15px;margin-bottom:2px}
 .ph .tier{color:#fcd34d;font-size:12px}
-.ps{font-size:11.5px;color:#94a3b8;line-height:1.4;margin-bottom:8px}
+.ps{font-size:11.5px;color:#94a3b8;line-height:1.35;margin-bottom:8px}
 .ps.nxt{color:#5eead4}
-.blist{display:flex;flex-direction:column;gap:7px;margin-bottom:9px}
-.bopt{display:grid;grid-template-columns:1fr auto;gap:2px 8px;text-align:left;
-  background:rgba(255,255,255,.045);border:1px solid rgba(127,233,255,.2);
-  border-radius:9px;padding:8px 10px;cursor:pointer;color:#dbeafe}
-.bopt.off{opacity:.42}
-.bn{font-weight:700;font-size:13px}
-.bc{font-weight:800;font-size:12.5px;color:#fcd34d;text-align:right}
-.bd{grid-column:1 / -1;font-size:10.5px;color:#8ea3b8;line-height:1.35}
-.prow{display:flex;flex-wrap:wrap;gap:7px}
-.prow button{flex:1 1 100%;border-radius:8px;padding:9px 0;font-weight:800;font-size:12.5px;
+.blist{display:flex;gap:7px;margin-bottom:9px}
+.bopt{flex:1;text-align:left;background:rgba(255,255,255,.05);
+  border:1px solid rgba(127,233,255,.22);border-radius:10px;
+  padding:9px 8px;cursor:pointer;color:#dbeafe;min-width:0}
+.bopt.off{opacity:.38}
+.bn{display:block;font-weight:700;font-size:12.5px;line-height:1.2}
+.bc{display:block;font-weight:800;font-size:13px;color:#fcd34d;margin-top:3px}
+.bd{display:block;font-size:10px;color:#8ea3b8;line-height:1.3;margin-top:4px}
+.prow{display:flex;gap:8px}
+.prow button{flex:1;border-radius:9px;padding:11px 0;font-weight:800;font-size:13px;
   cursor:pointer;background:#0e7490;color:#e0f2fe;border:1px solid #22d3ee}
 .prow button:disabled{opacity:.4;cursor:default}
 .prow .sell{background:rgba(30,41,59,.9);border-color:#475569;color:#cbd5e1}
 .prow .max{background:rgba(30,41,59,.7);border-color:#475569;color:#94a3b8}
-.pclose,.pclose2{width:100%;background:transparent;border:1px solid rgba(255,255,255,.16);
-  color:#8ea3b8;border-radius:8px;padding:8px 0;font-weight:700;font-size:12px;cursor:pointer}
-
-#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;
+.pclose,.pclose2{background:transparent;border:1px solid rgba(255,255,255,.18);
+  color:#8ea3b8;border-radius:9px;padding:11px 18px;font-weight:700;font-size:12.5px;cursor:pointer}
+.pclose{width:100%;margin-top:2px}
+#hint{position:absolute;left:50%;transform:translateX(-50%);top:52px;
   font-size:12px;color:rgba(200,225,245,.85);pointer-events:none;
   background:rgba(4,14,26,.7);border:1px solid rgba(127,233,255,.2);
   border-radius:999px;padding:6px 16px}
@@ -293,7 +293,9 @@ function startWave(){
 }
 
 /* ---- towers ---- */
-const PAD_R=52;                       /* tap radius of a pad */
+/* Generous tap radius: on a phone this scales down to ~48 css px, which is
+   about a fingertip. At the old 52 it was 23px and almost unhittable. */
+const PAD_R=112;
 function padAt(x,y){
   let best=-1,bd=PAD_R;
   for(let i=0;i<PADS.length;i++){
@@ -682,13 +684,17 @@ function syncHUD(){
         return `<button class="bopt${afford?"":" off"}" data-k="${k}">
           <span class="bn">${T.name}</span>
           <span class="bc">${money(T.cost)}</span>
-          <span class="bd">${T.desc}</span>
         </button>`;
       }).join("")+`</div>
       <button class="pclose" id="closeB">Cancel</button>`;
     p.querySelectorAll(".bopt").forEach(b=>{
       b.onclick=()=>{
-        if(place(b.dataset.k,S.selPad)){ S.selPad=null; }
+        const k=b.dataset.k;
+        if(S.gold<TOWERS[k].cost){
+          S.float.push({x:VW/2,y:VH/2,txt:"Not enough pearls",t:1.3,c:"#f87171",big:true});
+          return;
+        }
+        if(place(k,S.selPad)) S.selPad=null;
         syncHUD();
       };
     });
