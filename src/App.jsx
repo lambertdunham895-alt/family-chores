@@ -1576,8 +1576,7 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
                 onClick={t.onClick}
                 onMouseEnter={() => setHover(t.id)}
                 onMouseLeave={() => setHover(null)}
-                onTouchStart={() => setHover(t.id)}
-                onTouchEnd={() => setHover(null)}
+                onBlur={() => setHover(null)}
                 style={{
                   ...S.hubTile,
                   ...(wide ? S.hubTileWide : {}),
@@ -1833,12 +1832,13 @@ const S = {
     padding: "18px 16px", display: "flex", flexDirection: "column",
     alignItems: "flex-start", gap: 13, cursor: "pointer",
     color: "#d6a64e", WebkitTapHighlightColor: "transparent",
+    outline: "none", WebkitAppearance: "none", appearance: "none",
     boxShadow: "0 6px 20px rgba(0,0,0,0.45)",
     transition: "transform .18s ease, border-color .18s ease, box-shadow .18s ease" },
   hubTileWide: { gridColumn: "1 / -1", flexDirection: "row", alignItems: "center", gap: 15,
     padding: "16px 18px" },
-  hubTileOn: { transform: "translateY(-2px)", borderColor: "rgba(214,166,78,0.62)",
-    boxShadow: "0 10px 28px rgba(0,0,0,0.6), 0 0 0 1px rgba(214,166,78,0.16)" },
+  hubTileOn: { transform: "translateY(-2px)", borderColor: "rgba(214,166,78,0.45)",
+    boxShadow: "0 10px 28px rgba(0,0,0,0.6)" },
 
   hubIconWrap: { display: "flex", alignItems: "center", justifyContent: "center",
     width: 46, height: 46, borderRadius: 12, flexShrink: 0,
@@ -1854,7 +1854,8 @@ const S = {
     background: "transparent", border: "1px solid rgba(255,255,255,0.13)",
     color: "#7e7e87", borderRadius: 999, padding: "9px 18px",
     fontSize: 12, fontWeight: 600, cursor: "pointer",
-    WebkitTapHighlightColor: "transparent" },
+    WebkitTapHighlightColor: "transparent", outline: "none",
+    WebkitAppearance: "none", appearance: "none" },
   // Games hub
   gamesHubBar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "2px solid #e3ebf0", marginBottom: 18 },
   gamesHubTitle: { color: "#7c4adb", fontSize: 20, margin: 0, fontWeight: 800 },
