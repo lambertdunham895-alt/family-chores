@@ -34,11 +34,46 @@ function monthLabel(key) {
 }
 function shiftMonth(key, delta) {
   const [y, m] = key.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return d.toISOString().slice(0, 7);
+  return monthKey(new Date(y, m - 1 + delta, 1));
+}
+function todayIso(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/* ---- money in / money out ---- */
+const PEOPLE = [{ id: "adult_a", name: "Dad" }, { id: "adult_b", name: "Mom" }];
+const personName = (id) => (PEOPLE.find((p) => p.id === id) || { name: "Family" }).name;
+const SPEND_CATS = ["Groceries", "Gas", "Eating out", "Kids", "Household", "Medical", "Fun", "Other"];
+const SPEND_COLOR = {
+  Groceries: "#3d7a4e", Gas: "#c78a2c", "Eating out": "#c0392b", Kids: "#7c4adb",
+  Household: "#2c5f7c", Medical: "#2c8f8f", Fun: "#d6608a", Other: "#6b7c8c",
+};
+function shortDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function WalletIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+      <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" />
+      <path d="M21 11h-4a2 2 0 0 0 0 4h4z" />
+    </svg>
+  );
+}
+function CartIcon({ size = 16, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+      <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.3 16h7.9a2 2 0 0 0 2-1.6L21 7H6" />
+      <circle cx="10" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
+    </svg>
+  );
 }
 function money(n) {
-  return "$" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const v = Number(n || 0);
+  return (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
@@ -162,6 +197,13 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const [askAmount, setAskAmount] = useState(null);          // {bill, value} when paying
   const [toast, setToast] = useState(null);
 
+  // money in / money out for the visible month
+  const [income, setIncome] = useState([]);
+  const [spending, setSpending] = useState([]);
+  const [moneyReady, setMoneyReady] = useState(true);   // false if the tables aren't set up yet
+  const [entry, setEntry] = useState(null);             // add-paycheck / add-spending form
+  const [showActivity, setShowActivity] = useState(false);
+
   // AI scan
   const fileRef = useRef(null);
   const [scanning, setScanning] = useState(false);
@@ -181,6 +223,14 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
         .from("bill_payments").select("*").eq("period_key", period);
       setPayments(p || []);
     } catch (e) { console.error(e); }
+    try {
+      const [inc, spd] = await Promise.all([
+        supabase.from("income").select("*").eq("period_key", period).order("received_on", { ascending: false }),
+        supabase.from("spending").select("*").eq("period_key", period).order("spent_on", { ascending: false }),
+      ]);
+      if (inc.error || spd.error) { setMoneyReady(false); }
+      else { setMoneyReady(true); setIncome(inc.data || []); setSpending(spd.data || []); }
+    } catch (e) { console.error(e); setMoneyReady(false); }
     setLoading(false);
   }, [supabase, credsMissing, period]);
 
@@ -191,6 +241,8 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       .channel("bills-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "bills" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "bill_payments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "income" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "spending" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [load, supabase, credsMissing]);
@@ -240,6 +292,55 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       try { await supabase.from("bills").update({ amount: amt }).eq("id", bill.id); }
       catch (e) { console.error(e); }
     }
+  };
+
+  /* ---------- money in / money out ---------- */
+  const defaultDate = () => (period === monthKey() ? todayIso() : `${period}-01`);
+
+  const openEntry = async (kind) => {
+    const who = PEOPLE.some((p) => p.id === profile?.id) ? profile.id : "adult_a";
+    const base = { kind, who, amount: "", category: "Groceries", date: defaultDate(), note: "" };
+    setEntry(base);
+    // paychecks vary, so start from that person's last one rather than a blank box
+    if (kind === "income") prefillLastPay(who, base);
+  };
+  const prefillLastPay = async (who, base) => {
+    try {
+      const { data } = await supabase.from("income").select("amount").eq("who", who)
+        .order("received_on", { ascending: false }).limit(1);
+      if (data && data[0]) setEntry((e) => (e && e.kind === "income" && e.who === who && !e.amount
+        ? { ...e, amount: String(data[0].amount), prefilled: true } : e));
+    } catch (e) { /* a blank box is fine */ }
+  };
+
+  const saveEntry = async () => {
+    const amt = parseFloat(String(entry.amount).replace(/[$,]/g, ""));
+    if (isNaN(amt) || amt <= 0) { flash("Enter an amount"); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) { flash("Pick a date"); return; }
+    const pk = entry.date.slice(0, 7);
+    const isIncome = entry.kind === "income";
+    const row = isIncome
+      ? { received_on: entry.date, period_key: pk, who: entry.who, amount: amt,
+          note: entry.note.trim() || null, created_by: profile?.id || null }
+      : { spent_on: entry.date, period_key: pk, who: entry.who, category: entry.category,
+          amount: amt, note: entry.note.trim() || null, created_by: profile?.id || null };
+    try {
+      const { data, error } = await supabase.from(isIncome ? "income" : "spending").insert(row).select().single();
+      if (error) throw error;
+      if (pk === period) (isIncome ? setIncome : setSpending)((list) => [data, ...list]);
+      setEntry(null);
+      flash(isIncome ? `Paycheck logged · ${money(amt)}` : `Logged ${entry.category.toLowerCase()} · ${money(amt)}`);
+      if (pk !== period) flash(`Saved to ${monthLabel(pk)}`);
+    } catch (e) { console.error(e); flash("Couldn't save — is the money setup run?"); }
+  };
+
+  const removeEntry = async (kind, row) => {
+    const what = kind === "income" ? `${personName(row.who)}'s paycheck of ${money(row.amount)}`
+                                   : `${row.category} · ${money(row.amount)}`;
+    if (!confirm(`Delete ${what}?`)) return;
+    (kind === "income" ? setIncome : setSpending)((list) => list.filter((r) => r.id !== row.id));
+    try { await supabase.from(kind === "income" ? "income" : "spending").delete().eq("id", row.id); }
+    catch (e) { console.error(e); load(); }
   };
 
   const openHistory = async (bill) => {
@@ -411,6 +512,21 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   const remaining = total - paidTotal;
   const pct = total > 0 ? Math.round((paidTotal / total) * 100) : 0;
 
+  const incomeTotal = income.reduce((t, r) => t + Number(r.amount || 0), 0);
+  const spendTotal = spending.reduce((t, r) => t + Number(r.amount || 0), 0);
+  // what's actually in the account right now, versus what's yours once every bill clears
+  const leftNow = incomeTotal - paidTotal - spendTotal;
+  const leftAfter = incomeTotal - total - spendTotal;
+  const incomeBy = PEOPLE.map((p) => ({ ...p,
+    sum: income.filter((r) => r.who === p.id).reduce((t, r) => t + Number(r.amount || 0), 0) }));
+  const spendBy = SPEND_CATS.map((c) => ({ c,
+    sum: spending.filter((r) => r.category === c).reduce((t, r) => t + Number(r.amount || 0), 0) }))
+    .filter((x) => x.sum > 0).sort((a, b) => b.sum - a.sum);
+  const activity = [
+    ...income.map((r) => ({ kind: "income", date: r.received_on, row: r })),
+    ...spending.map((r) => ({ kind: "spend", date: r.spent_on, row: r })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
   const today = new Date();
   const viewingThisMonth = period === monthKey();
   const dayNow = today.getDate();
@@ -463,27 +579,156 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
         <button style={S.monthBtn} onClick={() => setPeriod(shiftMonth(period, 1))}>›</button>
       </div>
 
-      {/* ---- summary ---- */}
+      {/* ---- money card: what's left once the bills clear ---- */}
       <div style={S.summary}>
-        <div style={S.sumRow}>
-          <div>
-            <div style={S.sumLabel}>Remaining</div>
-            <div style={{ ...S.sumBig, color: remaining > 0 ? "#c0392b" : "#3d7a4e" }}>
-              {money(remaining)}
+        {moneyReady && incomeTotal > 0 ? (
+          <>
+            <div style={S.sumLabel}>Left after this month's bills</div>
+            <div style={{ ...S.leftBig, color: leftAfter >= 0 ? "#7fe0a0" : "#ffb4a8" }}>
+              {leftAfter >= 0 ? money(leftAfter) : `Short ${money(-leftAfter)}`}
             </div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={S.sumLabel}>Month total</div>
-            <div style={S.sumBig}>{money(total)}</div>
-          </div>
-        </div>
-        <div style={S.barOuter}>
-          <div style={{ ...S.barInner, width: `${pct}%` }} />
-        </div>
+            <div style={S.leftNow}>
+              Left right now: <b>{money(leftNow)}</b>
+              {total - paidTotal > 0 && <span style={{ opacity: 0.8 }}> · {money(total - paidTotal)} in bills still to come</span>}
+            </div>
+            <div style={S.flowRow}>
+              <div style={S.flowCell}><div style={S.flowLbl}>Money in</div><div style={S.flowVal}>{money(incomeTotal)}</div></div>
+              <div style={S.flowCell}><div style={S.flowLbl}>Bills</div><div style={S.flowVal}>{money(total)}</div></div>
+              <div style={S.flowCell}><div style={S.flowLbl}>Spending</div><div style={S.flowVal}>{money(spendTotal)}</div></div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={S.sumRow}>
+              <div>
+                <div style={S.sumLabel}>Bills remaining</div>
+                <div style={{ ...S.sumBig, color: remaining > 0 ? "#ffb4a8" : "#7fe0a0" }}>{money(remaining)}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={S.sumLabel}>Month total</div>
+                <div style={S.sumBig}>{money(total)}</div>
+              </div>
+            </div>
+            <div style={S.moneyHint}>
+              {moneyReady
+                ? "Log this month's first paycheck to see what's left after bills."
+                : "Money tracking isn't set up yet — run the setup script in Supabase."}
+            </div>
+          </>
+        )}
+        <div style={S.barOuter}><div style={{ ...S.barInner, width: `${pct}%` }} /></div>
         <div style={S.sumNote}>
-          {visible.filter(isPaid).length} of {visible.length} paid · {money(paidTotal)} so far
+          {visible.filter(isPaid).length} of {visible.length} bills paid · {money(paidTotal)} so far
         </div>
       </div>
+
+      {moneyReady && !entry && (
+        <div style={S.moneyBtns}>
+          <button style={S.payBtn} onClick={() => openEntry("income")}>
+            <WalletIcon size={16} color="#fff" /><span>Paycheck</span>
+          </button>
+          <button style={S.spendBtn} onClick={() => openEntry("spend")}>
+            <CartIcon size={16} color="#2c5f7c" /><span>Spending</span>
+          </button>
+          {activity.length > 0 && (
+            <button style={S.actBtn} onClick={() => setShowActivity((v) => !v)}>
+              {showActivity ? "Hide" : `Activity (${activity.length})`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ---- log a paycheck / log spending ---- */}
+      {entry && (
+        <div style={S.editCard}>
+          <div style={{ fontWeight: 800, marginBottom: 6, color: "#1a2b3c" }}>
+            {entry.kind === "income" ? "Log a paycheck" : "Log spending"}
+          </div>
+
+          <label style={S.label}>{entry.kind === "income" ? "Whose paycheck" : "Who spent it"}</label>
+          <div style={S.chipRow}>
+            {PEOPLE.map((p) => (
+              <button key={p.id} style={{ ...S.chip, ...(entry.who === p.id ? S.chipOn : {}) }}
+                onClick={() => {
+                  setEntry((e) => ({ ...e, who: p.id, ...(e.kind === "income" && e.prefilled ? { amount: "", prefilled: false } : {}) }));
+                  if (entry.kind === "income") prefillLastPay(p.id, entry);
+                }}>{p.name}</button>
+            ))}
+          </div>
+
+          {entry.kind === "spend" && (
+            <>
+              <label style={S.label}>What for</label>
+              <div style={S.chipRow}>
+                {SPEND_CATS.map((c) => (
+                  <button key={c} style={{ ...S.chip, ...(entry.category === c ? { ...S.chipOn,
+                    background: SPEND_COLOR[c], borderColor: SPEND_COLOR[c] } : {}) }}
+                    onClick={() => setEntry((e) => ({ ...e, category: c }))}>{c}</button>
+                ))}
+              </div>
+            </>
+          )}
+
+          <label style={S.label}>Amount</label>
+          <input style={{ ...S.input, fontSize: 22, fontWeight: 700 }} inputMode="decimal" placeholder="0.00"
+            value={entry.amount} autoFocus
+            onChange={(e) => setEntry((x) => ({ ...x, amount: e.target.value, prefilled: false }))} />
+          {entry.kind === "income" && entry.prefilled && (
+            <p style={S.hint}>That's {personName(entry.who)}'s last paycheck — change it if this one was different.</p>
+          )}
+
+          <label style={S.label}>Date</label>
+          <input style={S.input} type="date" value={entry.date}
+            onChange={(e) => setEntry((x) => ({ ...x, date: e.target.value }))} />
+
+          <label style={S.label}>Note (optional)</label>
+          <input style={S.input} value={entry.note}
+            placeholder={entry.kind === "income" ? "e.g. overtime week" : "e.g. Kroger"}
+            onChange={(e) => setEntry((x) => ({ ...x, note: e.target.value }))} />
+
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button style={S.saveBtn} onClick={saveEntry}>Save</button>
+            <button style={S.cancelBtn} onClick={() => setEntry(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- this month's money activity ---- */}
+      {showActivity && !entry && (
+        <div style={S.actCard}>
+          {incomeTotal > 0 && (
+            <div style={S.actSummary}>
+              {incomeBy.filter((p) => p.sum > 0).map((p) => (
+                <span key={p.id} style={S.actPill}>{p.name} brought in <b>{money(p.sum)}</b></span>
+              ))}
+            </div>
+          )}
+          {spendBy.length > 0 && (
+            <div style={{ ...S.actSummary, marginTop: 6 }}>
+              {spendBy.map((x) => (
+                <span key={x.c} style={{ ...S.actPill, borderColor: SPEND_COLOR[x.c], color: SPEND_COLOR[x.c] }}>
+                  {x.c} <b>{money(x.sum)}</b>
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 10 }}>
+            {activity.map(({ kind, date, row }) => (
+              <div key={kind + row.id} style={S.actRow}>
+                <span style={S.actDate}>{shortDate(date)}</span>
+                <span style={S.actWhat}>
+                  {kind === "income" ? `${personName(row.who)}'s paycheck` : row.category}
+                  {row.note && <span style={S.actNote}> · {row.note}</span>}
+                </span>
+                <span style={{ ...S.actAmt, color: kind === "income" ? "#3d7a4e" : "#c0392b" }}>
+                  {kind === "income" ? "+" : "−"}{money(row.amount)}
+                </span>
+                <button style={S.iconBtn} onClick={() => removeEntry(kind === "income" ? "income" : "spend", row)}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ---- add / edit ---- */}
       <div style={S.headerRow}>
@@ -827,6 +1072,34 @@ const S = {
     margin: "12px 0 6px", overflow: "hidden" },
   barInner: { background: "#7fe0a0", height: "100%", borderRadius: 20, transition: "width .4s" },
   sumNote: { fontSize: 12, opacity: 0.9 },
+  leftBig: { fontSize: 32, fontWeight: 800, marginTop: 2, letterSpacing: -0.5 },
+  leftNow: { fontSize: 13, marginTop: 4, opacity: 0.95 },
+  flowRow: { display: "flex", gap: 8, marginTop: 12 },
+  flowCell: { flex: 1, background: "rgba(255,255,255,0.1)", borderRadius: 9, padding: "7px 9px" },
+  flowLbl: { fontSize: 10.5, opacity: 0.8, textTransform: "uppercase", letterSpacing: 0.4 },
+  flowVal: { fontSize: 14.5, fontWeight: 700, marginTop: 1 },
+  moneyHint: { fontSize: 12.5, marginTop: 10, background: "rgba(255,255,255,0.1)",
+    borderRadius: 8, padding: "8px 10px" },
+  moneyBtns: { display: "flex", gap: 8, marginBottom: 16 },
+  payBtn: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+    background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 10,
+    padding: "11px 10px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
+  spendBtn: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+    background: "#fff", color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 10,
+    padding: "11px 10px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
+  actBtn: { background: "#fff", color: "#6b7c8c", border: "1.5px solid #dce5ec", borderRadius: 10,
+    padding: "11px 12px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" },
+  actCard: { background: "#f8fbfd", border: "1.5px solid #dce5ec", borderRadius: 12,
+    padding: 12, marginBottom: 16 },
+  actSummary: { display: "flex", flexWrap: "wrap", gap: 6 },
+  actPill: { fontSize: 12, border: "1.5px solid #c5d4de", borderRadius: 20, padding: "4px 10px",
+    color: "#2c5f7c", background: "#fff" },
+  actRow: { display: "flex", alignItems: "center", gap: 8, padding: "8px 2px",
+    borderBottom: "1px solid #e8eef2" },
+  actDate: { fontSize: 11.5, color: "#8a97a8", width: 46, flexShrink: 0 },
+  actWhat: { flex: 1, fontSize: 13.5, color: "#1a2b3c", minWidth: 0 },
+  actNote: { color: "#8a97a8", fontSize: 12 },
+  actAmt: { fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" },
   headerRow: { display: "flex", justifyContent: "space-between", alignItems: "center",
     marginBottom: 8 },
   sectionTitle: { color: "#2c5f7c", fontSize: 16, margin: 0 },
