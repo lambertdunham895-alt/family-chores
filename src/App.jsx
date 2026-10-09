@@ -264,6 +264,7 @@ export default function App() {
     } catch { return false; }
   });
   const [section, setSection] = useState("hub"); // "hub" | "chores" | "games" | "grocery" | "bills" | "calendar"
+  const [moneyStart, setMoneyStart] = useState(null);   // "quicklog" when opened from the home shortcut
   const [activeGame, setActiveGame] = useState(null); // game id when playing
   const [profile, setProfile] = useState(null);
   const [view, setView] = useState("today");
@@ -483,6 +484,7 @@ export default function App() {
         onGrocery={() => setSection("grocery")}
         onBills={() => setSection("bills")}
         onCalendar={() => setSection("calendar")}
+        onQuickLog={() => { setMoneyStart("quicklog"); setSection("bills"); }}
       />
     );
   }
@@ -519,6 +521,8 @@ export default function App() {
         profile={profile}
         credsMissing={credsMissing}
         onBack={() => setSection("hub")}
+        startWith={moneyStart}
+        onStarted={() => setMoneyStart(null)}
       />
     );
   }
@@ -1546,7 +1550,7 @@ function HubIcon({ name, size = 30 }) {
 }
 
 /* ---------------- Landing hub (first screen after PIN) ---------------- */
-function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
+function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuickLog }) {
   const [hover, setHover] = React.useState(null);
 
   const handleLock = () => {
@@ -1560,7 +1564,7 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
     { id: "chores",   icon: "chores",   name: "Chores",    sub: "Today's tasks & Quest mode", onClick: onChores },
     { id: "games",    icon: "games",    name: "Games",     sub: "Play together as a family",  onClick: onGames },
     { id: "grocery",  icon: "grocery",  name: "Groceries", sub: "Shared list, synced live",   onClick: onGrocery },
-    { id: "bills",    icon: "bills",    name: "Bills",     sub: "What's due & what's paid",   onClick: onBills },
+    { id: "bills",    icon: "bills",    name: "Money",     sub: "Budget, bills & savings",    onClick: onBills },
   ];
 
   return (
@@ -1604,7 +1608,13 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar }) {
           })}
         </div>
 
-        <div style={{ textAlign: "center", marginTop: 26 }}>
+        {/* the most frequent money task, two taps from opening the app */}
+        <button style={S.hubQuick} onClick={onQuickLog}>
+          <HubIcon name="grocery" size={18} />
+          <span>Log spending</span>
+        </button>
+
+        <div style={{ textAlign: "center", marginTop: 22 }}>
           <button style={S.hubLock} onClick={handleLock}>
             <HubIcon name="lock" size={13} />
             <span>Lock this device</span>
@@ -1859,6 +1869,11 @@ const S = {
   hubTileName: { fontSize: 16.5, fontWeight: 700, color: "#f0e6d2", letterSpacing: 0.2 },
   hubTileSub: { fontSize: 11.5, color: "#8b8b93", lineHeight: 1.35 },
 
+  hubQuick: { display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
+    marginTop: 12, padding: "14px 16px", borderRadius: 14, cursor: "pointer",
+    background: "linear-gradient(180deg,#e2b862,#c8953c)", color: "#1a140a", border: "none",
+    fontSize: 15.5, fontWeight: 800, outline: "none", WebkitTapHighlightColor: "transparent",
+    boxShadow: "0 8px 22px rgba(0,0,0,0.5)" },
   hubLock: { display: "inline-flex", alignItems: "center", gap: 7,
     background: "transparent", border: "1px solid rgba(255,255,255,0.13)",
     color: "#7e7e87", borderRadius: 999, padding: "9px 18px",
