@@ -1,31 +1,45 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 
-/* ============================================================
-   BILL TRACKER
-   - each bill has an amount + day of the month it's due
-   - "paid" is tracked per month, so it resets automatically
-   - shows what's due soon, what's overdue, and the monthly total
-   ============================================================ */
+/* =====================================================================
+   Money — household cash flow: paychecks, spending, budgets, bills, savings.
+   Dark + gold to match the home screen. Everything syncs live between phones.
+   ===================================================================== */
 
 const CATS = ["Housing", "Utilities", "Insurance", "Vehicle", "Debt", "Subscriptions", "Other"];
 const CAT_COLOR = {
-  Housing: "#2c5f7c", Utilities: "#c78a2c", Insurance: "#3d7a4e", Vehicle: "#7c4adb",
-  Debt: "#c0392b", Subscriptions: "#2c8f8f", Other: "#6b7c8c",
+  Housing: "#7ea6c9", Utilities: "#e0b45c", Insurance: "#7fc29b", Vehicle: "#b39ddb",
+  Debt: "#f28b82", Subscriptions: "#6cc6c6", Other: "#9a9aa3",
+};
+const PEOPLE = [{ id: "adult_a", name: "Dad" }, { id: "adult_b", name: "Mom" }];
+const personName = (id) => (PEOPLE.find((p) => p.id === id) || { name: "Family" }).name;
+const SPEND_CATS = ["Groceries", "Gas", "Eating out", "Kids", "Household", "Medical", "Fun", "Other"];
+const SPEND_COLOR = {
+  Groceries: "#7fc29b", Gas: "#e0b45c", "Eating out": "#f28b82", Kids: "#b39ddb",
+  Household: "#7ea6c9", Medical: "#6cc6c6", Fun: "#e58fb5", Other: "#9a9aa3",
 };
 
+/* palette */
+const C = {
+  bg: "#0b0b0d", card: "#141418", card2: "#1b1b21", line: "rgba(214,166,78,0.16)",
+  lineSoft: "rgba(255,255,255,0.06)", gold: "#d6a64e", goldHi: "#f0d49a",
+  text: "#f0e6d2", dim: "#a5a5ae", faint: "#6e6e78",
+  green: "#7fd6a0", amber: "#f2c46d", red: "#f28b82",
+};
+
+/* ---------- dates (local time only — never toISOString, which drifts across midnight UTC) ---------- */
 function monthKey(d = new Date()) {
-  // local-time safe (no UTC drift)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-// a one-time bill only shows in the month it's due; monthly bills show every month
+function todayIso(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 function inPeriod(bill, period) {
   if (bill.recurrence !== "once") return true;
   return (bill.due_date || "").slice(0, 7) === period;
 }
 function dayOf(bill) {
-  if (bill.recurrence === "once" && bill.due_date) {
-    return Number(bill.due_date.slice(8, 10));
-  }
+  if (bill.recurrence === "once" && bill.due_date) return Number(bill.due_date.slice(8, 10));
   return bill.due_day;
 }
 function monthLabel(key) {
@@ -36,62 +50,13 @@ function shiftMonth(key, delta) {
   const [y, m] = key.split("-").map(Number);
   return monthKey(new Date(y, m - 1 + delta, 1));
 }
-function todayIso(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/* ---- money in / money out ---- */
-const PEOPLE = [{ id: "adult_a", name: "Dad" }, { id: "adult_b", name: "Mom" }];
-const personName = (id) => (PEOPLE.find((p) => p.id === id) || { name: "Family" }).name;
-const SPEND_CATS = ["Groceries", "Gas", "Eating out", "Kids", "Household", "Medical", "Fun", "Other"];
-const SPEND_COLOR = {
-  Groceries: "#3d7a4e", Gas: "#c78a2c", "Eating out": "#c0392b", Kids: "#7c4adb",
-  Household: "#2c5f7c", Medical: "#2c8f8f", Fun: "#d6608a", Other: "#6b7c8c",
-};
 function daysInMonth(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m, 0).getDate();
 }
-function ReceiptIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
-      <path d="M6 3l1.5 1.4L9 3l1.5 1.4L12 3l1.5 1.4L15 3l1.5 1.4L18 3v16.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19.5z" />
-      <path d="M9.5 8.5h5M9.5 12h5M9.5 15.5h3" />
-    </svg>
-  );
-}
-function PiggyIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
-      <path d="M19 9c1 .5 2 1.6 2 3v2h-2l-1 3h-3v-2H9v2H6l-1-3a6 6 0 0 1 5-9h4a6 6 0 0 1 5 4z" />
-      <path d="M16 11h.01" /><path d="M2 9.5c.5 1 1.6 1.5 2.5 1.5" />
-    </svg>
-  );
-}
 function shortDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function WalletIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
-      <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" />
-      <path d="M21 11h-4a2 2 0 0 0 0 4h4z" />
-    </svg>
-  );
-}
-function CartIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
-      <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.3 16h7.9a2 2 0 0 0 2-1.6L21 7H6" />
-      <circle cx="10" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" />
-    </svg>
-  );
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 function money(n) {
   const v = Number(n || 0);
@@ -101,35 +66,9 @@ function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
+const num = (v) => { const n = parseFloat(String(v ?? "").replace(/[$,]/g, "")); return isNaN(n) ? null : n; };
 
-/* ---- stroke icon (Lucide style) for the scan button ---- */
-function ScanIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ display: "block" }}>
-      <path d="M3 7V5a2 2 0 0 1 2-2h2" />
-      <path d="M17 3h2a2 2 0 0 1 2 2v2" />
-      <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
-      <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
-      <path d="M7 12h10" />
-    </svg>
-  );
-}
-
-function InfoIcon({ size = 16, color = "currentColor" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ display: "block" }}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5" />
-      <path d="M12 8h.01" />
-    </svg>
-  );
-}
-
-/* ---- shrink a photo before upload; small print needs more detail than product photos ---- */
+/* ---------- photos for the scanner: text needs more detail than a product shot ---------- */
 function compressForOCR(file, maxDim = 1600, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -139,128 +78,131 @@ function compressForOCR(file, maxDim = 1600, quality = 0.85) {
       img.onerror = () => reject(new Error("That doesn't look like an image"));
       img.onload = () => {
         let { width: w, height: h } = img;
-        if (w > maxDim || h > maxDim) {
-          const s = maxDim / Math.max(w, h);
-          w = Math.round(w * s);
-          h = Math.round(h * s);
-        }
-        const c = document.createElement("canvas");
-        c.width = w; c.height = h;
-        const ctx = c.getContext("2d");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        const url = c.toDataURL("image/jpeg", quality);
-        resolve(url.split(",")[1]);
+        if (w > maxDim || h > maxDim) { const s = maxDim / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", quality).split(",")[1]);
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
 }
-
-const todayYmd = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
-
-/* supabase-js reports any non-2xx as "Edge Function returned a non-2xx status code"
-   and hides the body. Dig the real message out so errors are actually readable. */
+/* supabase-js hides an edge function's error body behind a generic message — dig it out */
 async function realError(error, data) {
   if (data && data.error) return data.error;
   try {
     if (error && error.context && typeof error.context.json === "function") {
-      const body = await error.context.json();
-      if (body && body.error) return body.error;
-    }
-  } catch (e) { /* fall through to the generic message */ }
-  return (error && error.message) || "Scan failed.";
-}
-
-function copyText(t) {
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(t);
-      return;
+      const body = await error.context.json(); if (body && body.error) return body.error;
     }
   } catch (e) { /* fall through */ }
+  return (error && error.message) || "Scan failed.";
+}
+function copyText(t) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t); return; } } catch (e) { /* fall through */ }
   try {
-    const ta = document.createElement("textarea");
-    ta.value = t;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-  } catch (e) { console.error(e); }
+    const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+  } catch (e) { /* nothing more to try */ }
 }
 
-export default function BillTracker({ supabase, profile, onBack, credsMissing }) {
-  const [bills, setBills] = useState([]);
-  const [payments, setPayments] = useState([]);   // for the visible month
-  const [period, setPeriod] = useState(monthKey());
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);   // {} for new, bill for edit
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [dueDay, setDueDay] = useState("1");
-  const [cat, setCat] = useState("Utilities");
-  const [autopay, setAutopay] = useState(false);
-  const [recurrence, setRecurrence] = useState("monthly");   // 'monthly' | 'once'
-  const [dueDate, setDueDate] = useState("");                // for one-time bills
-  const [variable, setVariable] = useState(false);           // amount changes monthly
-  const [acctNum, setAcctNum] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [details, setDetails] = useState(null);              // bill being viewed in the details modal
-  const [history, setHistory] = useState(null);              // {bill, rows} when viewing
-  const [askAmount, setAskAmount] = useState(null);          // {bill, value} when paying
-  const [toast, setToast] = useState(null);
+/* ---------- one icon set, stroke style, matching the home screen ---------- */
+const ICONS = {
+  back: <path d="M15 6l-6 6 6 6" />,
+  left: <path d="M15 6l-6 6 6 6" />,
+  right: <path d="M9 6l6 6-6 6" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  more: <><circle cx="5" cy="12" r="1.3" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.3" fill="currentColor" stroke="none" /></>,
+  check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+  close: <path d="M6 6l12 12M18 6L6 18" />,
+  wallet: <><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" /><path d="M21 11h-4a2 2 0 0 0 0 4h4z" /></>,
+  cart: <><path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.3 16h7.9a2 2 0 0 0 2-1.6L21 7H6" /><circle cx="10" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /></>,
+  receipt: <><path d="M6 3l1.5 1.4L9 3l1.5 1.4L12 3l1.5 1.4L15 3l1.5 1.4L18 3v16.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19.5z" /><path d="M9.5 8.5h5M9.5 12h5M9.5 15.5h3" /></>,
+  piggy: <><path d="M19 9c1 .5 2 1.6 2 3v2h-2l-1 3h-3v-2H9v2H6l-1-3a6 6 0 0 1 5-9h4a6 6 0 0 1 5 4z" /><path d="M16 11h.01" /></>,
+  scan: <><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" /><path d="M7 12h10" /></>,
+  bill: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+  history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>,
+  edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M14 6l4 4" /></>,
+  trash: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>,
+  alert: <><path d="M12 3l9.5 17h-19z" /><path d="M12 10v4M12 17h.01" /></>,
+  ok: <><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></>,
+  backspace: <><path d="M21 5H9l-6 7 6 7h12z" /><path d="M17 9l-6 6M11 9l6 6" /></>,
+  chevDown: <path d="M6 9l6 6 6-6" />,
+};
+function Icon({ name, size = 18, color = "currentColor", stroke = 2 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={stroke}
+      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", flexShrink: 0 }}>
+      {ICONS[name]}
+    </svg>
+  );
+}
 
-  // money in / money out for the visible month
+export default function BillTracker({ supabase, profile, onBack, credsMissing, startWith, onStarted }) {
+  /* ---- data ---- */
+  const [bills, setBills] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [income, setIncome] = useState([]);
   const [spending, setSpending] = useState([]);
-  const [moneyReady, setMoneyReady] = useState(true);   // false if the tables aren't set up yet
-  const [entry, setEntry] = useState(null);             // add-paycheck / add-spending form
-  const [showActivity, setShowActivity] = useState(false);
+  const [budgets, setBudgets] = useState([]);
+  const [goals, setGoals] = useState([]);
+  const [moves, setMoves] = useState([]);
+  const [moneyReady, setMoneyReady] = useState(true);
+  const [period, setPeriod] = useState(monthKey());
+  const [loading, setLoading] = useState(true);
 
-  // budgets + savings
-  const [budgets, setBudgets] = useState([]);           // [{category, amount}]
-  const [goals, setGoals] = useState([]);               // active savings goals
-  const [moves, setMoves] = useState([]);               // every transfer, all months (small table)
-  const [budgetDraft, setBudgetDraft] = useState(null); // {category: "600"} while editing
-  const [goalForm, setGoalForm] = useState(null);       // add / edit a goal
-  const [moving, setMoving] = useState(null);           // {goal, value} confirming a transfer
+  /* ---- ui ---- */
+  const [tab, setTab] = useState("overview");
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [ql, setQl] = useState(null);                 // quick-log sheet
+  const [sheet, setSheet] = useState(null);           // action menu {title, actions}
+  const [toast, setToast] = useState(null);           // {msg, undo?}
+  const toastTimer = useRef(null);
   const receiptRef = useRef(null);
-  const [readingReceipt, setReadingReceipt] = useState(false);
+  const billScanRef = useRef(null);
+  const [reading, setReading] = useState(null);       // "receipt" | "bill" while scanning
 
-  // AI scan
-  const fileRef = useRef(null);
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState(null);
-  const [scanNote, setScanNote] = useState(null);   // shown above the prefilled form
+  /* bill form */
+  const [editing, setEditing] = useState(null);
+  const [name, setName] = useState(""); const [amount, setAmount] = useState("");
+  const [dueDay, setDueDay] = useState("1"); const [cat, setCat] = useState("Utilities");
+  const [autopay, setAutopay] = useState(false); const [recurrence, setRecurrence] = useState("monthly");
+  const [dueDate, setDueDate] = useState(""); const [variable, setVariable] = useState(false);
+  const [acctNum, setAcctNum] = useState(""); const [phone, setPhone] = useState(""); const [notes, setNotes] = useState("");
+  const [scanNote, setScanNote] = useState(null);
+  const [details, setDetails] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [askAmount, setAskAmount] = useState(null);
 
-  const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 1900); };
+  /* budgets + savings forms */
+  const [budgetDraft, setBudgetDraft] = useState(null);
+  const [goalForm, setGoalForm] = useState(null);
+  const [moving, setMoving] = useState(null);
 
+  const flash = (msg, undo) => {
+    clearTimeout(toastTimer.current);
+    setToast({ msg, undo });
+    toastTimer.current = setTimeout(() => setToast(null), undo ? 4500 : 2000);
+  };
+
+  /* ---------- load + live sync ---------- */
   const load = useCallback(async () => {
     if (credsMissing) { setLoading(false); return; }
     try {
-      const { data: b } = await supabase
-        .from("bills").select("*").eq("active", true)
-        .order("due_day", { ascending: true });
-      setBills(b || []);
-      const { data: p } = await supabase
-        .from("bill_payments").select("*").eq("period_key", period);
-      setPayments(p || []);
+      const [b, p] = await Promise.all([
+        supabase.from("bills").select("*").eq("active", true).order("due_day", { ascending: true }),
+        supabase.from("bill_payments").select("*").eq("period_key", period),
+      ]);
+      setBills(b.data || []); setPayments(p.data || []);
     } catch (e) { console.error(e); }
     try {
       const [inc, spd] = await Promise.all([
         supabase.from("income").select("*").eq("period_key", period).order("received_on", { ascending: false }),
         supabase.from("spending").select("*").eq("period_key", period).order("spent_on", { ascending: false }),
       ]);
-      if (inc.error || spd.error) { setMoneyReady(false); }
+      if (inc.error || spd.error) setMoneyReady(false);
       else { setMoneyReady(true); setIncome(inc.data || []); setSpending(spd.data || []); }
     } catch (e) { console.error(e); setMoneyReady(false); }
     try {
@@ -279,192 +221,245 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
   useEffect(() => {
     load();
     if (credsMissing) return;
-    const ch = supabase
-      .channel("bills-sync")
-      .on("postgres_changes", { event: "*", schema: "public", table: "bills" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "bill_payments" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "income" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "spending" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "budgets" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "savings_goals" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "savings_moves" }, load)
-      .subscribe();
+    let ch = supabase.channel("money-sync");
+    for (const t of ["bills", "bill_payments", "income", "spending", "budgets", "savings_goals", "savings_moves"])
+      ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, load);
+    ch.subscribe();
     return () => supabase.removeChannel(ch);
   }, [load, supabase, credsMissing]);
 
-  const paidMap = {};
-  payments.forEach((p) => { paidMap[p.bill_id] = p; });
-  const isPaid = (b) => !!paidMap[b.id];
+  /* opened from the home screen's "Log spending" shortcut */
+  useEffect(() => {
+    if (startWith === "quicklog" && !loading) { openQuickLog("spend"); onStarted && onStarted(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startWith, loading]);
 
-  /* ---------- actions ---------- */
-  const markPaid = async (bill, amt) => {
-    const row = {
-      bill_id: bill.id, period_key: period, paid: true,
-      amount_paid: amt, paid_by: profile?.id || null,
-    };
-    setPayments((p) => [...p.filter((x) => x.bill_id !== bill.id), { ...row, id: `tmp${Date.now()}` }]);
-    try {
-      await supabase.from("bill_payments").upsert(row, { onConflict: "bill_id,period_key" });
-    } catch (e) { console.error(e); flash("Couldn't save"); load(); }
-  };
-
-  const togglePaid = async (bill) => {
-    if (isPaid(bill)) {
-      setPayments((p) => p.filter((x) => x.bill_id !== bill.id));
-      try {
-        await supabase.from("bill_payments").delete()
-          .match({ bill_id: bill.id, period_key: period });
-      } catch (e) { console.error(e); }
-      return;
-    }
-    // variable bills: confirm what was actually paid this month
-    if (bill.variable) {
-      setAskAmount({ bill, value: String(bill.amount ?? "") });
-      return;
-    }
-    markPaid(bill, bill.amount);
-  };
-
-  const confirmAmount = async () => {
-    const { bill, value } = askAmount;
-    const amt = parseFloat(value);
-    if (isNaN(amt) || amt < 0) { flash("Enter a valid amount"); return; }
-    setAskAmount(null);
-    await markPaid(bill, amt);
-    // remember it as the new estimate for next month
-    if (Math.abs(amt - Number(bill.amount || 0)) > 0.005) {
-      setBills((p) => p.map((b) => (b.id === bill.id ? { ...b, amount: amt } : b)));
-      try { await supabase.from("bills").update({ amount: amt }).eq("id", bill.id); }
-      catch (e) { console.error(e); }
-    }
-  };
-
-  /* ---------- money in / money out ---------- */
+  const myId = PEOPLE.some((p) => p.id === profile?.id) ? profile.id : "adult_a";
   const defaultDate = () => (period === monthKey() ? todayIso() : `${period}-01`);
 
-  const openEntry = async (kind) => {
-    const who = PEOPLE.some((p) => p.id === profile?.id) ? profile.id : "adult_a";
-    const base = { kind, who, amount: "", category: "Groceries", date: defaultDate(), note: "" };
-    setEntry(base);
-    // paychecks vary, so start from that person's last one rather than a blank box
-    if (kind === "income") prefillLastPay(who, base);
-  };
-  const prefillLastPay = async (who, base) => {
+  /* ================= quick log ================= */
+  // most-used categories first, so the usual one is under your thumb
+  const catOrder = (() => {
+    const n = {}; spending.forEach((r) => { n[r.category] = (n[r.category] || 0) + 1; });
+    return [...SPEND_CATS].sort((a, b) => (n[b] || 0) - (n[a] || 0) || SPEND_CATS.indexOf(a) - SPEND_CATS.indexOf(b));
+  })();
+  // default to the category you use most — a wrong guess gets filed silently if you forget to tap
+  const lastCat = spending.length ? catOrder[0] : "Groceries";
+
+  function openQuickLog(mode) {
+    const base = { mode, amount: "", category: lastCat, who: myId, date: defaultDate(), note: "",
+      showMore: false, receipt: null };
+    setQl(base);
+    if (mode === "income") prefillPay(myId);
+  }
+  async function prefillPay(who) {
     try {
       const { data } = await supabase.from("income").select("amount").eq("who", who)
         .order("received_on", { ascending: false }).limit(1);
-      if (data && data[0]) setEntry((e) => (e && e.kind === "income" && e.who === who && !e.amount
-        ? { ...e, amount: String(data[0].amount), prefilled: true } : e));
-    } catch (e) { /* a blank box is fine */ }
-  };
-
-  const saveEntry = async () => {
-    const amt = parseFloat(String(entry.amount).replace(/[$,]/g, ""));
-    if (isNaN(amt) || amt <= 0) { flash("Enter an amount"); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) { flash("Pick a date"); return; }
-    const pk = entry.date.slice(0, 7);
-    const isIncome = entry.kind === "income";
-    const row = isIncome
-      ? { received_on: entry.date, period_key: pk, who: entry.who, amount: amt,
-          note: entry.note.trim() || null, created_by: profile?.id || null }
-      : { spent_on: entry.date, period_key: pk, who: entry.who, category: entry.category,
-          amount: amt, note: entry.note.trim() || null, created_by: profile?.id || null };
+      if (data && data[0]) setQl((q) => (q && q.mode === "income" && q.who === who && !q.amount
+        ? { ...q, amount: String(Number(data[0].amount)), prefilled: true } : q));
+    } catch (e) { /* a blank amount is fine */ }
+  }
+  function keypad(k) {
+    setQl((q) => {
+      let a = q.prefilled ? "" : q.amount;
+      if (k === "⌫") a = a.slice(0, -1);
+      else if (k === ".") { if (!a.includes(".")) a = (a || "0") + "."; }
+      else {
+        if (a.includes(".") && a.split(".")[1].length >= 2) return q;
+        if (!a.includes(".") && a.replace(/^0+/, "").length >= 6) return q;
+        a = a === "0" ? k : a + k;
+      }
+      return { ...q, amount: a, prefilled: false };
+    });
+  }
+  async function saveQuickLog() {
+    const amt = num(ql.amount);
+    if (amt == null || amt <= 0) { flash("Enter an amount"); return; }
+    if (!isYmd(ql.date)) { flash("Pick a date"); return; }
+    const pk = ql.date.slice(0, 7), isIn = ql.mode === "income";
+    const row = isIn
+      ? { received_on: ql.date, period_key: pk, who: ql.who, amount: amt, note: ql.note.trim() || null, created_by: profile?.id || null }
+      : { spent_on: ql.date, period_key: pk, who: ql.who, category: ql.category, amount: amt, note: ql.note.trim() || null, created_by: profile?.id || null };
+    const table = isIn ? "income" : "spending";
     try {
-      const { data, error } = await supabase.from(isIncome ? "income" : "spending").insert(row).select().single();
+      const { data, error } = await supabase.from(table).insert(row).select().single();
       if (error) throw error;
-      if (pk === period) (isIncome ? setIncome : setSpending)((list) => [data, ...list]);
-      setEntry(null);
-      flash(isIncome ? `Paycheck logged · ${money(amt)}` : `Logged ${entry.category.toLowerCase()} · ${money(amt)}`);
-      if (pk !== period) flash(`Saved to ${monthLabel(pk)}`);
-    } catch (e) { console.error(e); flash("Couldn't save — is the money setup run?"); }
-  };
+      if (pk === period) (isIn ? setIncome : setSpending)((l) => [data, ...l]);
+      setQl(null);
+      const label = isIn ? `Paycheck logged · ${money(amt)}` : `${money(amt)} · ${ql.category}`;
+      flash(pk === period ? label : `${label} — saved to ${monthLabel(pk)}`, async () => {
+        (isIn ? setIncome : setSpending)((l) => l.filter((r) => r.id !== data.id));
+        setToast(null);
+        try { await supabase.from(table).delete().eq("id", data.id); } catch (e) { load(); }
+      });
+    } catch (e) { console.error(e); flash("Couldn't save"); }
+  }
+  async function deleteEntry(kind, row) {
+    const table = kind === "income" ? "income" : "spending";
+    (kind === "income" ? setIncome : setSpending)((l) => l.filter((r) => r.id !== row.id));
+    try { await supabase.from(table).delete().eq("id", row.id); } catch (e) { console.error(e); load(); }
+    flash("Deleted", async () => {
+      setToast(null);
+      const { id, ...rest } = row;
+      try { await supabase.from(table).insert(rest); load(); } catch (e) { console.error(e); }
+    });
+  }
 
-  const removeEntry = async (kind, row) => {
-    const what = kind === "income" ? `${personName(row.who)}'s paycheck of ${money(row.amount)}`
-                                   : `${row.category} · ${money(row.amount)}`;
-    if (!confirm(`Delete ${what}?`)) return;
-    (kind === "income" ? setIncome : setSpending)((list) => list.filter((r) => r.id !== row.id));
-    try { await supabase.from(kind === "income" ? "income" : "spending").delete().eq("id", row.id); }
-    catch (e) { console.error(e); load(); }
-  };
-
-  /* ---------- receipt scanning: photo -> prefilled spending entry ---------- */
-  const onPickReceipt = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
+  /* receipt -> fills the quick-log sheet */
+  async function onPickReceipt(e) {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
     if (!file) return;
-    setReadingReceipt(true);
+    setReading("receipt");
     try {
       const b64 = await compressForOCR(file);
-      const { data, error } = await supabase.functions.invoke("scan-doc", {
-        body: { image_base64: b64, media_type: "image/jpeg", mode: "receipt", today: todayYmd() },
-      });
+      const { data, error } = await supabase.functions.invoke("scan-doc",
+        { body: { image_base64: b64, media_type: "image/jpeg", mode: "receipt", today: todayIso() } });
       if (error || (data && data.error)) throw new Error(await realError(error, data));
       const r = Array.isArray(data && data.results) ? data.results[0] : null;
       if (!r) throw new Error("Couldn't read that receipt.");
       const total = typeof r.total === "number" && isFinite(r.total) && r.total > 0 ? r.total : null;
-      const date = /^\d{4}-\d{2}-\d{2}$/.test(r.date || "") ? r.date : todayIso();
       const conf = typeof r.confidence === "number" ? r.confidence : 1;
-      setEntry({
-        kind: "spend",
-        who: PEOPLE.some((p) => p.id === profile?.id) ? profile.id : "adult_a",
+      setQl({ mode: "spend", who: myId,
         amount: total == null ? "" : total.toFixed(2),
         category: SPEND_CATS.includes(r.category) ? r.category : "Other",
-        date,
+        date: isYmd(r.date) ? r.date : todayIso(),
         note: typeof r.merchant === "string" ? r.merchant.trim().slice(0, 40) : "",
-        receipt: total == null
-          ? { tone: "warn", text: "Couldn't read the total — type it in from the receipt." }
-          : conf < 0.6
-            ? { tone: "warn", text: "Not fully sure about this one. Check the total against the receipt." }
-            : { tone: "ok", text: "Filled in from your receipt. Check it, then save." },
-      });
-    } catch (err) {
-      console.error(err);
-      flash(err.message || "Couldn't read that receipt");
+        showMore: true,
+        receipt: total == null ? { tone: "warn", text: "Couldn't read the total — type it from the receipt." }
+          : conf < 0.6 ? { tone: "warn", text: "Not fully sure — check the total against the receipt." }
+          : { tone: "ok", text: "Read from your receipt. Check it, then save." } });
+    } catch (err) { console.error(err); flash(err.message || "Couldn't read that receipt"); }
+    setReading(null);
+  }
+
+  /* ================= bills ================= */
+  const paidMap = {}; payments.forEach((p) => { paidMap[p.bill_id] = p; });
+  const isPaid = (b) => !!paidMap[b.id];
+  const markPaid = async (bill, amt) => {
+    const row = { bill_id: bill.id, period_key: period, paid: true, amount_paid: amt, paid_by: profile?.id || null };
+    setPayments((p) => [...p.filter((x) => x.bill_id !== bill.id), { ...row, id: `tmp${Date.now()}` }]);
+    try { await supabase.from("bill_payments").upsert(row, { onConflict: "bill_id,period_key" }); }
+    catch (e) { console.error(e); flash("Couldn't save"); load(); }
+  };
+  const togglePaid = async (bill) => {
+    if (isPaid(bill)) {
+      setPayments((p) => p.filter((x) => x.bill_id !== bill.id));
+      try { await supabase.from("bill_payments").delete().match({ bill_id: bill.id, period_key: period }); }
+      catch (e) { console.error(e); }
+      return;
     }
-    setReadingReceipt(false);
+    if (bill.variable) { setAskAmount({ bill, value: String(bill.amount ?? "") }); return; }
+    markPaid(bill, bill.amount);
+    flash(`${bill.name} paid · ${money(bill.amount)}`);
+  };
+  const confirmAmount = async () => {
+    const { bill, value } = askAmount; const amt = num(value);
+    if (amt == null || amt < 0) { flash("Enter a valid amount"); return; }
+    setAskAmount(null); await markPaid(bill, amt);
+    flash(`${bill.name} paid · ${money(amt)}`);
+    if (Math.abs(amt - Number(bill.amount || 0)) > 0.005) {
+      setBills((p) => p.map((b) => (b.id === bill.id ? { ...b, amount: amt } : b)));
+      try { await supabase.from("bills").update({ amount: amt }).eq("id", bill.id); } catch (e) { console.error(e); }
+    }
+  };
+  const openHistory = async (bill) => {
+    setHistory({ bill, rows: null });
+    try {
+      const { data } = await supabase.from("bill_payments").select("period_key, amount_paid, paid_at")
+        .eq("bill_id", bill.id).order("period_key", { ascending: false }).limit(12);
+      setHistory({ bill, rows: data || [] });
+    } catch (e) { console.error(e); setHistory({ bill, rows: [] }); }
+  };
+  const startNew = () => {
+    setScanNote(null); setEditing({}); setName(""); setAmount(""); setDueDay("1"); setCat("Utilities");
+    setAutopay(false); setVariable(false); setRecurrence("monthly"); setAcctNum(""); setPhone(""); setNotes("");
+    setDueDate(todayIso());
+  };
+  const startEdit = (b) => {
+    setScanNote(null); setEditing(b); setName(b.name); setAmount(String(b.amount)); setDueDay(String(b.due_day));
+    setCat(b.category); setAutopay(!!b.autopay); setRecurrence(b.recurrence || "monthly"); setDueDate(b.due_date || "");
+    setVariable(!!b.variable); setAcctNum(b.account_number || ""); setPhone(b.phone || ""); setNotes(b.notes || "");
+  };
+  async function onPickBill(e) {
+    const file = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    setReading("bill");
+    try {
+      const b64 = await compressForOCR(file);
+      const { data, error } = await supabase.functions.invoke("scan-doc",
+        { body: { image_base64: b64, media_type: "image/jpeg", mode: "bill", today: todayIso() } });
+      if (error || (data && data.error)) throw new Error(await realError(error, data));
+      const r = Array.isArray(data && data.results) ? data.results[0] : null;
+      if (!r) throw new Error("Nothing readable in that photo.");
+      const missing = [];
+      const nm = typeof r.name === "string" ? r.name.trim().slice(0, 60) : ""; setName(nm); if (!nm) missing.push("the biller");
+      const amt = typeof r.amount === "number" && isFinite(r.amount) && r.amount >= 0 ? r.amount : null;
+      setAmount(amt == null ? "" : String(amt)); if (amt == null) missing.push("the amount");
+      if (isYmd(r.due_date)) { setDueDate(r.due_date); setDueDay(String(Number(r.due_date.slice(8, 10)))); }
+      else { setDueDate(todayIso()); setDueDay("1"); missing.push("the due date"); }
+      setCat(CATS.includes(r.category) ? r.category : "Other"); setVariable(!!r.variable); setRecurrence("monthly");
+      setAutopay(false); setAcctNum(typeof r.account_number === "string" ? r.account_number.trim().slice(0, 40) : "");
+      setPhone(typeof r.phone === "string" ? r.phone.trim().slice(0, 30) : ""); setNotes(""); setEditing({});
+      const conf = typeof r.confidence === "number" ? r.confidence : 1;
+      setScanNote(missing.length ? { tone: "warn", text: `Couldn't find ${missing.join(" or ")} — fill that in below.` }
+        : conf < 0.6 ? { tone: "warn", text: "Not fully sure about this one. Check the amount and due date." }
+        : { tone: "ok", text: "Filled in from your photo. Check it, then save." });
+    } catch (err) { console.error(err); flash(err.message || "Couldn't scan that photo"); }
+    setReading(null);
+  }
+  const saveBill = async () => {
+    const amt = num(amount);
+    if (!name.trim()) { flash("Give it a name"); return; }
+    if (amt == null || amt < 0) { flash("Enter a valid amount"); return; }
+    let day = parseInt(dueDay, 10);
+    if (recurrence === "once") { if (!dueDate) { flash("Pick the date it's due"); return; } day = Number(dueDate.slice(8, 10)); }
+    else if (isNaN(day) || day < 1 || day > 31) { flash("Due day must be 1–31"); return; }
+    const payload = { name: name.trim(), amount: amt, due_day: day, category: cat, autopay, active: true, variable, recurrence,
+      due_date: recurrence === "once" ? dueDate : null, account_number: acctNum.trim() || null,
+      phone: phone.trim() || null, notes: notes.trim() || null };
+    try {
+      if (editing.id) { await supabase.from("bills").update(payload).eq("id", editing.id); flash("Bill updated"); }
+      else { await supabase.from("bills").insert(payload); flash("Bill added"); }
+      setEditing(null); setScanNote(null); load();
+    } catch (e) { console.error(e); flash("Couldn't save"); }
+  };
+  const removeBill = async (b) => {
+    if (!confirm(`Remove "${b.name}"? Its payment history is kept.`)) return;
+    setBills((l) => l.filter((x) => x.id !== b.id));
+    try { await supabase.from("bills").update({ active: false }).eq("id", b.id); flash("Bill removed"); }
+    catch (e) { console.error(e); load(); }
   };
 
-  /* ---------- budgets ---------- */
+  /* ================= budgets ================= */
   const startBudgets = () => {
-    const d = {};
-    SPEND_CATS.forEach((c) => {
-      const b = budgets.find((x) => x.category === c);
-      d[c] = b ? String(Number(b.amount)) : "";
-    });
+    const d = {}; SPEND_CATS.forEach((c) => { const b = budgets.find((x) => x.category === c); d[c] = b ? String(Number(b.amount)) : ""; });
     setBudgetDraft(d);
   };
   const saveBudgets = async () => {
-    const upserts = [], removals = [];
+    const ups = [], rem = [];
     for (const c of SPEND_CATS) {
-      const raw = String(budgetDraft[c] || "").replace(/[$,]/g, "").trim();
-      const v = parseFloat(raw);
-      if (raw === "" || isNaN(v) || v <= 0) { if (budgets.some((b) => b.category === c)) removals.push(c); }
-      else upserts.push({ category: c, amount: Math.round(v * 100) / 100, updated_at: new Date().toISOString() });
+      const v = num(budgetDraft[c]);
+      if (v == null || v <= 0) { if (budgets.some((b) => b.category === c)) rem.push(c); }
+      else ups.push({ category: c, amount: Math.round(v * 100) / 100, updated_at: new Date().toISOString() });
     }
-    setBudgets(upserts.map((u) => ({ ...u })));
-    setBudgetDraft(null);
+    setBudgets(ups); setBudgetDraft(null);
     try {
-      if (upserts.length) await supabase.from("budgets").upsert(upserts, { onConflict: "category" });
-      for (const c of removals) await supabase.from("budgets").delete().eq("category", c);
+      if (ups.length) await supabase.from("budgets").upsert(ups, { onConflict: "category" });
+      for (const c of rem) await supabase.from("budgets").delete().eq("category", c);
       flash("Budgets saved");
     } catch (e) { console.error(e); flash("Couldn't save budgets"); load(); }
   };
 
-  /* ---------- savings ---------- */
+  /* ================= savings ================= */
   const startGoal = (g) => setGoalForm(g
-    ? { id: g.id, name: g.name, monthly: String(Number(g.monthly_amount)),
-        target: g.target_amount ? String(Number(g.target_amount)) : "",
-        start: String(Number(g.starting_amount || 0)) }
+    ? { id: g.id, name: g.name, monthly: String(Number(g.monthly_amount)), target: g.target_amount ? String(Number(g.target_amount)) : "", start: String(Number(g.starting_amount || 0)) }
     : { name: "Emergency fund", monthly: "", target: "", start: "" });
-  const num = (v) => { const n = parseFloat(String(v || "").replace(/[$,]/g, "")); return isNaN(n) ? null : n; };
   const saveGoal = async () => {
-    const name = goalForm.name.trim();
-    const monthly = num(goalForm.monthly);
-    if (!name) { flash("Give it a name"); return; }
+    const nm = goalForm.name.trim(), monthly = num(goalForm.monthly);
+    if (!nm) { flash("Give it a name"); return; }
     if (monthly == null || monthly < 0) { flash("Enter a monthly amount"); return; }
-    const row = { name: name.slice(0, 40), monthly_amount: monthly,
-      target_amount: num(goalForm.target) || null, starting_amount: num(goalForm.start) || 0 };
+    const row = { name: nm.slice(0, 40), monthly_amount: monthly, target_amount: num(goalForm.target) || null, starting_amount: num(goalForm.start) || 0 };
     try {
       if (goalForm.id) await supabase.from("savings_goals").update(row).eq("id", goalForm.id);
       else await supabase.from("savings_goals").insert(row);
@@ -472,218 +467,45 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
     } catch (e) { console.error(e); flash("Couldn't save the goal"); }
   };
   const removeGoal = async (g) => {
-    if (!confirm(`Stop tracking "${g.name}"? What you've already saved stays in your account — this only removes it from the app.`)) return;
-    setGoals((list) => list.filter((x) => x.id !== g.id));
-    try { await supabase.from("savings_goals").update({ active: false }).eq("id", g.id); }
-    catch (e) { console.error(e); load(); }
+    if (!confirm(`Stop tracking "${g.name}"? What you've saved stays in your account — this only removes it from the app.`)) return;
+    setGoals((l) => l.filter((x) => x.id !== g.id));
+    try { await supabase.from("savings_goals").update({ active: false }).eq("id", g.id); } catch (e) { console.error(e); load(); }
   };
+  const movedFor = (g) => moves.find((m) => m.goal_id === g.id && m.period_key === period);
   const confirmMove = async () => {
     const amt = num(moving.value);
     if (amt == null || amt < 0) { flash("Enter an amount"); return; }
     const row = { goal_id: moving.goal.id, period_key: period, amount: amt, moved_on: defaultDate() };
-    setMoves((list) => [...list.filter((m) => !(m.goal_id === row.goal_id && m.period_key === period)), { ...row, id: "tmp" + Date.now() }]);
+    setMoves((l) => [...l.filter((m) => !(m.goal_id === row.goal_id && m.period_key === period)), { ...row, id: "tmp" + Date.now() }]);
     setMoving(null);
     try { await supabase.from("savings_moves").upsert(row, { onConflict: "goal_id,period_key" }); flash(`Set aside ${money(amt)}`); }
     catch (e) { console.error(e); flash("Couldn't save"); load(); }
   };
   const undoMove = async (g) => {
-    setMoves((list) => list.filter((m) => !(m.goal_id === g.id && m.period_key === period)));
-    try { await supabase.from("savings_moves").delete().match({ goal_id: g.id, period_key: period }); }
-    catch (e) { console.error(e); load(); }
+    setMoves((l) => l.filter((m) => !(m.goal_id === g.id && m.period_key === period)));
+    try { await supabase.from("savings_moves").delete().match({ goal_id: g.id, period_key: period }); } catch (e) { console.error(e); load(); }
   };
 
-  const openHistory = async (bill) => {
-    setHistory({ bill, rows: null });
-    try {
-      const { data } = await supabase.from("bill_payments")
-        .select("period_key, amount_paid, paid_at")
-        .eq("bill_id", bill.id)
-        .order("period_key", { ascending: false })
-        .limit(12);
-      setHistory({ bill, rows: data || [] });
-    } catch (e) { console.error(e); setHistory({ bill, rows: [] }); }
-  };
-
-  const startNew = () => {
-    const d = new Date();
-    setScanNote(null);
-    setEditing({}); setName(""); setAmount(""); setDueDay("1");
-    setCat("Utilities"); setAutopay(false); setVariable(false);
-    setRecurrence("monthly");
-    setAcctNum(""); setPhone(""); setNotes("");
-    setDueDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-  };
-  const startEdit = (b) => {
-    setScanNote(null);
-    setEditing(b); setName(b.name); setAmount(String(b.amount));
-    setDueDay(String(b.due_day)); setCat(b.category); setAutopay(!!b.autopay);
-    setRecurrence(b.recurrence || "monthly");
-    setDueDate(b.due_date || "");
-    setVariable(!!b.variable);
-    setAcctNum(b.account_number || ""); setPhone(b.phone || ""); setNotes(b.notes || "");
-  };
-
-  /* ---------- AI scan ---------- */
-  const onPickPhoto = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";          // let the same file be picked again later
-    if (!file) return;
-    if (credsMissing) { flash("Supabase isn't configured"); return; }
-
-    setScanError(null);
-    setScanNote(null);
-    setScanning(true);
-    try {
-      const b64 = await compressForOCR(file);
-      const { data, error } = await supabase.functions.invoke("scan-doc", {
-        body: {
-          image_base64: b64,
-          media_type: "image/jpeg",
-          mode: "bill",
-          today: todayYmd(),
-        },
-      });
-      if (error || (data && data.error)) throw new Error(await realError(error, data));
-
-      const r = Array.isArray(data && data.results) ? data.results[0] : null;
-      if (!r) throw new Error("Nothing readable in that photo.");
-
-      const missing = [];
-
-      // name
-      const nm = typeof r.name === "string" ? r.name.trim().slice(0, 60) : "";
-      setName(nm);
-      if (!nm) missing.push("the biller");
-
-      // amount
-      const amt = typeof r.amount === "number" && isFinite(r.amount) && r.amount >= 0
-        ? r.amount : null;
-      setAmount(amt == null ? "" : String(amt));
-      if (amt == null) missing.push("the amount");
-
-      // due date -> monthly bill on that day of the month (the common case)
-      if (isYmd(r.due_date)) {
-        setDueDate(r.due_date);
-        setDueDay(String(Number(r.due_date.slice(8, 10))));
-      } else {
-        setDueDate(todayYmd());
-        setDueDay("1");
-        missing.push("the due date");
-      }
-
-      setCat(CATS.includes(r.category) ? r.category : "Other");
-      setVariable(!!r.variable);
-      setRecurrence("monthly");
-      setAutopay(false);
-      setAcctNum(typeof r.account_number === "string" ? r.account_number.trim().slice(0, 40) : "");
-      setPhone(typeof r.phone === "string" ? r.phone.trim().slice(0, 30) : "");
-      setNotes("");
-      setEditing({});
-
-      const conf = typeof r.confidence === "number" ? r.confidence : 1;
-      if (missing.length) {
-        setScanNote({
-          tone: "warn",
-          text: `Couldn't find ${missing.join(" or ")} — fill that in below.`,
-        });
-      } else if (conf < 0.6) {
-        setScanNote({
-          tone: "warn",
-          text: "Wasn't fully sure about this one. Check the amount and due date.",
-        });
-      } else {
-        setScanNote({
-          tone: "ok",
-          text: "Filled in from your photo. Check it, then save.",
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      setScanError(err.message || "Couldn't scan that photo.");
-    }
-    setScanning(false);
-  };
-
-  const save = async () => {
-    const amt = parseFloat(amount);
-    if (!name.trim()) { flash("Give it a name"); return; }
-    if (isNaN(amt) || amt < 0) { flash("Enter a valid amount"); return; }
-
-    let day = parseInt(dueDay, 10);
-    if (recurrence === "once") {
-      if (!dueDate) { flash("Pick the date it's due"); return; }
-      day = Number(dueDate.slice(8, 10));      // keep due_day in sync for sorting
-    } else if (isNaN(day) || day < 1 || day > 31) {
-      flash("Due day must be 1–31"); return;
-    }
-
-    const payload = {
-      name: name.trim(), amount: amt, due_day: day,
-      category: cat, autopay, active: true, variable,
-      recurrence,
-      due_date: recurrence === "once" ? dueDate : null,
-      account_number: acctNum.trim() || null,
-      phone: phone.trim() || null,
-      notes: notes.trim() || null,
-    };
-    try {
-      if (editing.id) {
-        await supabase.from("bills").update(payload).eq("id", editing.id);
-        flash("Bill updated");
-      } else {
-        await supabase.from("bills").insert(payload);
-        flash("Bill added");
-      }
-      setEditing(null);
-      setScanNote(null);
-    } catch (e) { console.error(e); flash("Couldn't save"); }
-  };
-
-  const remove = async (b) => {
-    if (!confirm(`Remove "${b.name}"? Past payment history is kept.`)) return;
-    try {
-      await supabase.from("bills").update({ active: false }).eq("id", b.id);
-      flash("Removed");
-    } catch (e) { console.error(e); }
-  };
-
-  /* ---------- derived ---------- */
-  // one-time bills only appear in their own month
+  /* ================= the numbers ================= */
   const visible = bills.filter((b) => inPeriod(b, period));
-  // for a paid bill use the real amount paid; otherwise the estimate
-  const amtFor = (b) => {
-    const p = paidMap[b.id];
-    if (p && p.amount_paid != null) return Number(p.amount_paid);
-    return Number(b.amount || 0);
-  };
-  const total = visible.reduce((s, b) => s + amtFor(b), 0);
-  const paidTotal = visible.filter(isPaid).reduce((s, b) => s + amtFor(b), 0);
-  const remaining = total - paidTotal;
-  const pct = total > 0 ? Math.round((paidTotal / total) * 100) : 0;
+  const amtFor = (b) => { const p = paidMap[b.id]; return p && p.amount_paid != null ? Number(p.amount_paid) : Number(b.amount || 0); };
+  const billsTotal = visible.reduce((t, b) => t + amtFor(b), 0);
+  const billsPaid = visible.filter(isPaid).reduce((t, b) => t + amtFor(b), 0);
+  const billsLeft = billsTotal - billsPaid;
 
   const incomeTotal = income.reduce((t, r) => t + Number(r.amount || 0), 0);
   const spendTotal = spending.reduce((t, r) => t + Number(r.amount || 0), 0);
-  // savings comes off the top: a goal counts as set aside this month even before
-  // you move it, so "left over" never quietly includes money meant for savings
-  const movedFor = (g) => moves.find((m) => m.goal_id === g.id && m.period_key === period);
-  const savingsReserved = goals.reduce((t, g) => {
-    const m = movedFor(g); return t + (m ? Number(m.amount) : Number(g.monthly_amount || 0));
-  }, 0);
+  const savingsReserved = goals.reduce((t, g) => { const m = movedFor(g); return t + (m ? Number(m.amount) : Number(g.monthly_amount || 0)); }, 0);
   const savingsMoved = goals.reduce((t, g) => { const m = movedFor(g); return t + (m ? Number(m.amount) : 0); }, 0);
-  const savedTotal = (g) => Number(g.starting_amount || 0) +
-    moves.filter((m) => m.goal_id === g.id).reduce((t, m) => t + Number(m.amount || 0), 0);
+  const savedTotal = (g) => Number(g.starting_amount || 0) + moves.filter((m) => m.goal_id === g.id).reduce((t, m) => t + Number(m.amount || 0), 0);
 
-  // what's actually in hand right now, versus what's yours once every bill and savings clears
-  const leftNow = incomeTotal - paidTotal - spendTotal - savingsMoved;
-  const leftAfter = incomeTotal - total - spendTotal - savingsReserved;
-
-  /* budgets with pacing: compare how much is spent with how much of the month is gone */
-  const thisMonth = monthKey();
+  const thisMonth = monthKey(), today = new Date(), dayNow = today.getDate();
+  const viewingThisMonth = period === thisMonth;
   const dim = daysInMonth(period);
-  const monthFrac = period < thisMonth ? 1 : period > thisMonth ? 0 : new Date().getDate() / dim;
-  const daysLeft = period === thisMonth ? dim - new Date().getDate() + 1 : period > thisMonth ? dim : 0;
-  const budgetRows = budgets
-    .filter((b) => Number(b.amount) > 0)
+  const monthFrac = period < thisMonth ? 1 : period > thisMonth ? 0 : dayNow / dim;
+  const daysLeft = viewingThisMonth ? dim - dayNow + 1 : period > thisMonth ? dim : 0;
+
+  const budgetRows = budgets.filter((b) => Number(b.amount) > 0)
     .sort((a, b) => SPEND_CATS.indexOf(a.category) - SPEND_CATS.indexOf(b.category))
     .map((b) => {
       const budget = Number(b.amount);
@@ -692,660 +514,573 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
       let tone, text;
       if (left < 0) { tone = "over"; text = `Over by ${money(-left)}`; }
       else if (monthFrac >= 1) { tone = "ok"; text = `Finished ${money(left)} under`; }
-      else if (frac > monthFrac + 0.12 && spent > 0) {
-        tone = "warn";
-        text = `Ahead of pace — ${Math.round(frac * 100)}% spent, ${Math.round(monthFrac * 100)}% of the month gone`;
-      } else {
-        tone = "ok";
-        text = daysLeft > 0 ? `On track · ${money(left / daysLeft)}/day for ${daysLeft} more day${daysLeft === 1 ? "" : "s"}` : `${money(left)} left`;
-      }
+      else if (frac > monthFrac + 0.12 && spent > 0) { tone = "warn"; text = `Ahead of pace — ${Math.round(frac * 100)}% spent, ${Math.round(monthFrac * 100)}% of the month gone`; }
+      else { tone = "ok"; text = daysLeft > 0 ? `On track · ${money(left / daysLeft)}/day for ${daysLeft} more day${daysLeft === 1 ? "" : "s"}` : `${money(left)} left`; }
       return { category: b.category, budget, spent, frac, left, tone, text };
     });
-  // what's genuinely free if you stick to every budget
   const budgetHeadroom = budgetRows.reduce((t, r) => t + Math.max(0, r.left), 0);
-  const freeAfterBudgets = leftAfter - budgetHeadroom;
-  const incomeBy = PEOPLE.map((p) => ({ ...p,
-    sum: income.filter((r) => r.who === p.id).reduce((t, r) => t + Number(r.amount || 0), 0) }));
-  const spendBy = SPEND_CATS.map((c) => ({ c,
-    sum: spending.filter((r) => r.category === c).reduce((t, r) => t + Number(r.amount || 0), 0) }))
-    .filter((x) => x.sum > 0).sort((a, b) => b.sum - a.sum);
-  const activity = [
-    ...income.map((r) => ({ kind: "income", date: r.received_on, row: r })),
-    ...spending.map((r) => ({ kind: "spend", date: r.spent_on, row: r })),
-  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
-  const today = new Date();
-  const viewingThisMonth = period === monthKey();
-  const dayNow = today.getDate();
+  /* "safe to spend": what's free once bills, savings, spending so far,
+     and the rest of every budget are accounted for */
+  const afterBills = incomeTotal - billsTotal - spendTotal - savingsReserved;
+  const safeToSpend = afterBills - budgetHeadroom;
+  const inHand = incomeTotal - billsPaid - spendTotal - savingsMoved;
 
   const statusOf = (b) => {
     const d = dayOf(b);
-    if (isPaid(b)) return { key: "paid", label: "Paid", color: "#3d7a4e" };
-    if (!viewingThisMonth) return { key: "due", label: "Unpaid", color: "#6b7c8c" };
-    if (d < dayNow) return { key: "late", label: "Overdue", color: "#c0392b" };
-    if (d - dayNow <= 5) return { key: "soon", label: `Due in ${d - dayNow}d`, color: "#c78a2c" };
-    return { key: "due", label: `Due ${ordinal(d)}`, color: "#6b7c8c" };
+    if (isPaid(b)) return { key: "paid", label: "Paid", color: C.green };
+    if (!viewingThisMonth) return { key: "due", label: "Unpaid", color: C.dim };
+    if (d < dayNow) return { key: "late", label: "Overdue", color: C.red };
+    if (d - dayNow <= 5) return { key: "soon", label: d === dayNow ? "Due today" : `Due in ${d - dayNow}d`, color: C.amber };
+    return { key: "due", label: `Due ${ordinal(d)}`, color: C.dim };
   };
+  const sortedBills = [...visible].sort((a, b) => (isPaid(a) - isPaid(b)) || (dayOf(a) - dayOf(b)));
 
-  const sorted = [...visible].sort((a, b) => {
-    const pa = isPaid(a) ? 1 : 0, pb = isPaid(b) ? 1 : 0;
-    if (pa !== pb) return pa - pb;              // unpaid first
-    return dayOf(a) - dayOf(b);
-  });
+  /* things worth a look, most urgent first */
+  const alerts = [];
+  if (viewingThisMonth) {
+    visible.filter((b) => !isPaid(b) && statusOf(b).key === "late")
+      .forEach((b) => alerts.push({ tone: "red", text: `${b.name} is overdue`, amt: amtFor(b), go: "bills" }));
+    visible.filter((b) => !isPaid(b) && statusOf(b).key === "soon")
+      .forEach((b) => alerts.push({ tone: "amber", text: `${b.name} ${statusOf(b).label.toLowerCase()}`, amt: amtFor(b), go: "bills" }));
+  }
+  budgetRows.filter((r) => r.tone === "over").forEach((r) => alerts.push({ tone: "red", text: `${r.category} is over budget`, amt: -r.left, go: "spending" }));
+  budgetRows.filter((r) => r.tone === "warn").forEach((r) => alerts.push({ tone: "amber", text: `${r.category} is ahead of pace`, go: "spending" }));
+  if (viewingThisMonth) goals.filter((g) => !movedFor(g) && Number(g.monthly_amount) > 0)
+    .forEach((g) => alerts.push({ tone: "gold", text: `${g.name}: not set aside yet`, amt: Number(g.monthly_amount), go: "savings" }));
 
+  const spendingByDay = (() => {
+    const g = {}; spending.forEach((r) => { (g[r.spent_on] = g[r.spent_on] || []).push(r); });
+    return Object.entries(g).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  })();
+
+  /* ================= render ================= */
   if (loading) {
-    return (
-      <div style={S.center}>
-        <div style={{ fontSize: 40 }}>🧾</div>
-        <div style={{ color: "#6b7c8c", marginTop: 12 }}>Loading bills…</div>
-      </div>
-    );
+    return <div style={S.screen}><div style={S.center}><div style={{ color: C.dim }}>Loading…</div></div></div>;
   }
 
+  const TABS = [["overview", "Overview"], ["spending", "Spending"], ["bills", "Bills"], ["savings", "Savings"]];
+  const toneCol = { red: C.red, amber: C.amber, gold: C.gold, green: C.green };
+  const rowMenu = (title, actions) => setSheet({ title, actions });
+  const overlayOpen = ql || sheet || details || history || askAmount;
+
+  const Bar = ({ frac, color, mark }) => (
+    <div style={S.bar}>
+      <div style={{ ...S.barFill, width: `${Math.max(0, Math.min(1, frac)) * 100}%`, background: color }} />
+      {mark > 0 && mark < 1 && <div style={{ ...S.barMark, left: `${mark * 100}%` }} />}
+    </div>
+  );
+
   return (
-    <div style={S.app}>
-      <div style={S.topbar}>
-        <button style={S.backBtn} onClick={onBack}>← Home</button>
-        <h2 style={S.title}>🧾 Bills</h2>
-        <div style={{ width: 70 }} />
-      </div>
-
-      {credsMissing && (
-        <div style={S.banner}>⚠️ Supabase isn't configured — changes won't sync.</div>
-      )}
-
-      {/* ---- month switcher ---- */}
-      <div style={S.monthBar}>
-        <button style={S.monthBtn} onClick={() => setPeriod(shiftMonth(period, -1))}>‹</button>
-        <div style={{ textAlign: "center" }}>
-          <div style={S.monthName}>{monthLabel(period)}</div>
-          {!viewingThisMonth && (
-            <button style={S.todayBtn} onClick={() => setPeriod(monthKey())}>back to this month</button>
-          )}
+    <div style={S.screen}>
+      <div style={S.wrap}>
+        {/* ---- header ---- */}
+        <div style={S.top}>
+          <button style={S.backBtn} onClick={onBack}><Icon name="back" size={16} /><span>Home</span></button>
+          <h1 style={S.title}>Money</h1>
+          <div style={{ width: 78 }} />
         </div>
-        <button style={S.monthBtn} onClick={() => setPeriod(shiftMonth(period, 1))}>›</button>
-      </div>
+        <div style={S.monthBar}>
+          <button style={S.monthBtn} aria-label="Previous month" onClick={() => setPeriod(shiftMonth(period, -1))}><Icon name="left" size={18} /></button>
+          <div style={{ textAlign: "center" }}>
+            <div style={S.monthName}>{monthLabel(period)}</div>
+            {!viewingThisMonth && <button style={S.linkBtn} onClick={() => setPeriod(thisMonth)}>back to this month</button>}
+          </div>
+          <button style={S.monthBtn} aria-label="Next month" onClick={() => setPeriod(shiftMonth(period, 1))}><Icon name="right" size={18} /></button>
+        </div>
 
-      {/* ---- money card: what's left once the bills clear ---- */}
-      <div style={S.summary}>
-        {moneyReady && incomeTotal > 0 ? (
+        <div style={S.tabs}>
+          {TABS.map(([id, label]) => (
+            <button key={id} style={{ ...S.tab, ...(tab === id ? S.tabOn : {}) }} onClick={() => setTab(id)}>{label}</button>
+          ))}
+        </div>
+
+        {!moneyReady && <div style={S.warnBox}>Money tracking isn't set up in the database yet.</div>}
+
+        {/* ======================= OVERVIEW ======================= */}
+        {tab === "overview" && (
           <>
-            <div style={S.sumLabel}>Left after this month's bills</div>
-            <div style={{ ...S.leftBig, color: leftAfter >= 0 ? "#7fe0a0" : "#ffb4a8" }}>
-              {leftAfter >= 0 ? money(leftAfter) : `Short ${money(-leftAfter)}`}
-            </div>
-            <div style={S.leftNow}>
-              Left right now: <b>{money(leftNow)}</b>
-              {total - paidTotal > 0 && <span style={{ opacity: 0.8 }}> · {money(total - paidTotal)} in bills still to come</span>}
-            </div>
-            {budgetRows.length > 0 && (
-              <div style={S.leftNow}>
-                If you stick to your budgets: <b style={{ color: freeAfterBudgets >= 0 ? "#7fe0a0" : "#ffb4a8" }}>
-                  {freeAfterBudgets >= 0 ? `${money(freeAfterBudgets)} free` : `short ${money(-freeAfterBudgets)}`}</b>
+            {incomeTotal > 0 ? (
+              <button style={S.hero} onClick={() => setShowBreakdown((v) => !v)}>
+                <div style={S.heroLbl}>Safe to spend</div>
+                <div style={{ ...S.heroNum, color: safeToSpend >= 0 ? C.green : C.red }}>
+                  {safeToSpend >= 0 ? money(safeToSpend) : `Short ${money(-safeToSpend)}`}
+                </div>
+                <div style={S.heroSub}>
+                  {budgetRows.length ? "after bills, savings, and the rest of your budgets" : "after bills and savings"}
+                  {daysLeft > 0 && safeToSpend > 0 && viewingThisMonth ? ` · ${money(safeToSpend / daysLeft)}/day` : ""}
+                </div>
+                <div style={S.heroMore}>
+                  <span>{showBreakdown ? "Hide breakdown" : "How this is worked out"}</span>
+                  <span style={{ transform: showBreakdown ? "rotate(180deg)" : "none", display: "inline-flex" }}><Icon name="chevDown" size={14} /></span>
+                </div>
+                {showBreakdown && (
+                  <div style={S.breakdown}>
+                    {[["Money in", incomeTotal, 1], ["Bills this month", billsTotal, -1],
+                      ...(goals.length ? [["Savings", savingsReserved, -1]] : []),
+                      ["Spent so far", spendTotal, -1],
+                      ...(budgetRows.length ? [["Rest of your budgets", budgetHeadroom, -1]] : [])].map(([l, v, s]) => (
+                      <div key={l} style={S.bdRow}><span>{l}</span><span>{s > 0 ? "+" : "−"}{money(v).replace("−", "")}</span></div>
+                    ))}
+                    <div style={{ ...S.bdRow, ...S.bdTotal }}><span>Safe to spend</span><span>{money(safeToSpend)}</span></div>
+                    <div style={S.bdNote}>Money actually in hand right now: <b>{money(inHand)}</b></div>
+                  </div>
+                )}
+              </button>
+            ) : (
+              <div style={S.hero}>
+                <div style={S.heroLbl}>Safe to spend</div>
+                <div style={{ fontSize: 15, color: C.text, margin: "8px 0 12px", lineHeight: 1.45 }}>
+                  Log this month's first paycheck and you'll see exactly what's safe to spend.
+                </div>
+                <button style={S.primary} onClick={() => openQuickLog("income")}><Icon name="wallet" size={17} /><span>Log a paycheck</span></button>
               </div>
             )}
-            <div style={S.flowRow}>
-              <div style={S.flowCell}><div style={S.flowLbl}>Money in</div><div style={S.flowVal}>{money(incomeTotal)}</div></div>
-              <div style={S.flowCell}><div style={S.flowLbl}>Bills</div><div style={S.flowVal}>{money(total)}</div></div>
-              <div style={S.flowCell}><div style={S.flowLbl}>Spending</div><div style={S.flowVal}>{money(spendTotal)}</div></div>
-              {goals.length > 0 && (
-                <div style={S.flowCell}><div style={S.flowLbl}>Savings</div><div style={S.flowVal}>{money(savingsReserved)}</div></div>
-              )}
+
+            <div style={S.actions}>
+              <button style={S.action} onClick={() => openQuickLog("spend")}><Icon name="cart" size={20} color={C.gold} /><span>Log spending</span></button>
+              <button style={S.action} disabled={!!reading} onClick={() => receiptRef.current && receiptRef.current.click()}>
+                <Icon name="receipt" size={20} color={C.gold} /><span>{reading === "receipt" ? "Reading…" : "Scan receipt"}</span></button>
+              <button style={S.action} onClick={() => openQuickLog("income")}><Icon name="wallet" size={20} color={C.gold} /><span>Paycheck</span></button>
             </div>
-          </>
-        ) : (
-          <>
-            <div style={S.sumRow}>
-              <div>
-                <div style={S.sumLabel}>Bills remaining</div>
-                <div style={{ ...S.sumBig, color: remaining > 0 ? "#ffb4a8" : "#7fe0a0" }}>{money(remaining)}</div>
+
+            <div style={S.card}>
+              <div style={S.cardHead}>Needs a look</div>
+              {alerts.length === 0 ? (
+                <div style={S.allGood}><Icon name="ok" size={18} color={C.green} /><span>Nothing needs your attention.</span></div>
+              ) : alerts.map((a, i) => (
+                <button key={i} style={S.alert} onClick={() => setTab(a.go)}>
+                  <span style={{ ...S.alertDot, background: toneCol[a.tone] }} />
+                  <span style={{ flex: 1, textAlign: "left" }}>{a.text}</span>
+                  {a.amt != null && <span style={{ color: C.dim }}>{money(a.amt)}</span>}
+                  <Icon name="right" size={15} color={C.faint} />
+                </button>
+              ))}
+            </div>
+
+            <div style={S.card}>
+              <div style={S.cardHeadRow}>
+                <span style={S.cardHead}>Money in</span>
+                <span style={S.cardTotal}>{money(incomeTotal)}</span>
               </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={S.sumLabel}>Month total</div>
-                <div style={S.sumBig}>{money(total)}</div>
-              </div>
+              {income.length === 0 ? <div style={S.muted}>No paychecks logged this month.</div> :
+                income.map((r) => (
+                  <div key={r.id} style={S.row}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={S.rowName}>{personName(r.who)}'s paycheck</div>
+                      <div style={S.rowMeta}>{shortDate(r.received_on)}{r.note ? ` · ${r.note}` : ""}</div>
+                    </div>
+                    <span style={{ ...S.rowAmt, color: C.green }}>+{money(r.amount)}</span>
+                    <button style={S.more} aria-label="Options" onClick={() => rowMenu(`${personName(r.who)}'s paycheck · ${money(r.amount)}`,
+                      [{ label: "Delete", icon: "trash", danger: true, onClick: () => deleteEntry("income", r) }])}><Icon name="more" size={18} /></button>
+                  </div>
+                ))}
             </div>
-            <div style={S.moneyHint}>
-              {moneyReady
-                ? "Log this month's first paycheck to see what's left after bills."
-                : "Money tracking isn't set up yet — run the setup script in Supabase."}
-            </div>
-          </>
-        )}
-        <div style={S.barOuter}><div style={{ ...S.barInner, width: `${pct}%` }} /></div>
-        <div style={S.sumNote}>
-          {visible.filter(isPaid).length} of {visible.length} bills paid · {money(paidTotal)} so far
-        </div>
-      </div>
 
-      {moneyReady && !entry && (
-        <div style={S.moneyBtns}>
-          <button style={S.payBtn} onClick={() => openEntry("income")}>
-            <WalletIcon size={16} color="#fff" /><span>Paycheck</span>
-          </button>
-          <button style={S.spendBtn} onClick={() => openEntry("spend")}>
-            <CartIcon size={16} color="#2c5f7c" /><span>Spending</span>
-          </button>
-          <button style={{ ...S.receiptBtn, ...(readingReceipt ? { opacity: 0.6 } : {}) }}
-            disabled={readingReceipt} title="Scan a receipt"
-            onClick={() => receiptRef.current && receiptRef.current.click()}>
-            <ReceiptIcon size={18} color="#2c5f7c" />
-          </button>
-        </div>
-      )}
-      <input ref={receiptRef} type="file" accept="image/*" onChange={onPickReceipt} style={{ display: "none" }} />
-      {readingReceipt && <div style={S.scanNoteBox}>Reading the receipt… this takes a few seconds.</div>}
-      {moneyReady && !entry && activity.length > 0 && (
-        <button style={S.actToggle} onClick={() => setShowActivity((v) => !v)}>
-          {showActivity ? "Hide this month's activity" : `Show this month's activity (${activity.length})`}
-        </button>
-      )}
-
-      {/* ---- log a paycheck / log spending ---- */}
-      {entry && (
-        <div style={S.editCard}>
-          <div style={{ fontWeight: 800, marginBottom: 6, color: "#1a2b3c" }}>
-            {entry.kind === "income" ? "Log a paycheck" : entry.receipt ? "Log this receipt" : "Log spending"}
-          </div>
-          {entry.receipt && (
-            <div style={entry.receipt.tone === "warn" ? S.noteWarn : S.noteOk}>{entry.receipt.text}</div>
-          )}
-
-          <label style={S.label}>{entry.kind === "income" ? "Whose paycheck" : "Who spent it"}</label>
-          <div style={S.chipRow}>
-            {PEOPLE.map((p) => (
-              <button key={p.id} style={{ ...S.chip, ...(entry.who === p.id ? S.chipOn : {}) }}
-                onClick={() => {
-                  setEntry((e) => ({ ...e, who: p.id, ...(e.kind === "income" && e.prefilled ? { amount: "", prefilled: false } : {}) }));
-                  if (entry.kind === "income") prefillLastPay(p.id, entry);
-                }}>{p.name}</button>
-            ))}
-          </div>
-
-          {entry.kind === "spend" && (
-            <>
-              <label style={S.label}>What for</label>
-              <div style={S.chipRow}>
-                {SPEND_CATS.map((c) => (
-                  <button key={c} style={{ ...S.chip, ...(entry.category === c ? { ...S.chipOn,
-                    background: SPEND_COLOR[c], borderColor: SPEND_COLOR[c] } : {}) }}
-                    onClick={() => setEntry((e) => ({ ...e, category: c }))}>{c}</button>
+            {spending.length > 0 && (
+              <div style={S.card}>
+                <div style={S.cardHeadRow}>
+                  <span style={S.cardHead}>Recent spending</span>
+                  <button style={S.linkBtn} onClick={() => setTab("spending")}>See all</button>
+                </div>
+                {spending.slice(0, 4).map((r) => (
+                  <div key={r.id} style={S.row}>
+                    <span style={{ ...S.catDot, background: SPEND_COLOR[r.category] }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={S.rowName}>{r.note || r.category}</div>
+                      <div style={S.rowMeta}>{r.note ? `${r.category} · ` : ""}{shortDate(r.spent_on)}</div>
+                    </div>
+                    <span style={S.rowAmt}>−{money(r.amount)}</span>
+                  </div>
                 ))}
               </div>
-            </>
-          )}
-
-          <label style={S.label}>Amount</label>
-          <input style={{ ...S.input, fontSize: 22, fontWeight: 700 }} inputMode="decimal" placeholder="0.00"
-            value={entry.amount} autoFocus
-            onChange={(e) => setEntry((x) => ({ ...x, amount: e.target.value, prefilled: false }))} />
-          {entry.kind === "income" && entry.prefilled && (
-            <p style={S.hint}>That's {personName(entry.who)}'s last paycheck — change it if this one was different.</p>
-          )}
-
-          <label style={S.label}>Date</label>
-          <input style={S.input} type="date" value={entry.date}
-            onChange={(e) => setEntry((x) => ({ ...x, date: e.target.value }))} />
-
-          <label style={S.label}>Note (optional)</label>
-          <input style={S.input} value={entry.note}
-            placeholder={entry.kind === "income" ? "e.g. overtime week" : "e.g. Kroger"}
-            onChange={(e) => setEntry((x) => ({ ...x, note: e.target.value }))} />
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button style={S.saveBtn} onClick={saveEntry}>Save</button>
-            <button style={S.cancelBtn} onClick={() => setEntry(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* ---- this month's money activity ---- */}
-      {showActivity && !entry && (
-        <div style={S.actCard}>
-          {incomeTotal > 0 && (
-            <div style={S.actSummary}>
-              {incomeBy.filter((p) => p.sum > 0).map((p) => (
-                <span key={p.id} style={S.actPill}>{p.name} brought in <b>{money(p.sum)}</b></span>
-              ))}
-            </div>
-          )}
-          {spendBy.length > 0 && (
-            <div style={{ ...S.actSummary, marginTop: 6 }}>
-              {spendBy.map((x) => (
-                <span key={x.c} style={{ ...S.actPill, borderColor: SPEND_COLOR[x.c], color: SPEND_COLOR[x.c] }}>
-                  {x.c} <b>{money(x.sum)}</b>
-                </span>
-              ))}
-            </div>
-          )}
-          <div style={{ marginTop: 10 }}>
-            {activity.map(({ kind, date, row }) => (
-              <div key={kind + row.id} style={S.actRow}>
-                <span style={S.actDate}>{shortDate(date)}</span>
-                <span style={S.actWhat}>
-                  {kind === "income" ? `${personName(row.who)}'s paycheck` : row.category}
-                  {row.note && <span style={S.actNote}> · {row.note}</span>}
-                </span>
-                <span style={{ ...S.actAmt, color: kind === "income" ? "#3d7a4e" : "#c0392b" }}>
-                  {kind === "income" ? "+" : "−"}{money(row.amount)}
-                </span>
-                <button style={S.iconBtn} onClick={() => removeEntry(kind === "income" ? "income" : "spend", row)}>✕</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ---- budgets with pacing ---- */}
-      {moneyReady && !entry && (
-        <div style={S.section}>
-          <div style={S.headerRow}>
-            <h3 style={S.sectionTitle}>Budgets</h3>
-            {!budgetDraft && budgetRows.length > 0 && (
-              <button style={S.ghostBtn} onClick={startBudgets}>Edit</button>
             )}
-          </div>
-
-          {budgetDraft ? (
-            <div style={S.editCard}>
-              <div style={{ fontWeight: 800, color: "#1a2b3c" }}>Monthly budgets</div>
-              <p style={S.hint}>How much you mean to spend each month. Leave a box empty to not budget it.</p>
-              {SPEND_CATS.map((c) => (
-                <div key={c} style={S.budgetEditRow}>
-                  <span style={{ ...S.dot, background: SPEND_COLOR[c] }} />
-                  <span style={{ flex: 1, fontSize: 14, color: "#1a2b3c" }}>{c}</span>
-                  <span style={{ color: "#8a97a8", marginRight: 4 }}>$</span>
-                  <input style={{ ...S.input, width: 110, padding: "8px 10px" }} inputMode="decimal" placeholder="—"
-                    value={budgetDraft[c]} onChange={(e) => setBudgetDraft((d) => ({ ...d, [c]: e.target.value }))} />
-                </div>
-              ))}
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button style={S.saveBtn} onClick={saveBudgets}>Save budgets</button>
-                <button style={S.cancelBtn} onClick={() => setBudgetDraft(null)}>Cancel</button>
-              </div>
-            </div>
-          ) : budgetRows.length === 0 ? (
-            <div style={S.emptyCard}>
-              <div style={{ fontSize: 13.5, color: "#3d4c59", lineHeight: 1.45 }}>
-                Set a monthly target for groceries, gas, and the rest. The app will warn you
-                when you're spending faster than the month is going.
-              </div>
-              <button style={{ ...S.addBtn, marginTop: 10 }} onClick={startBudgets}>Set budgets</button>
-            </div>
-          ) : (
-            budgetRows.map((r) => {
-              // traffic lights, not category colours: a warning colour must only ever mean a warning
-              const col = r.tone === "over" ? "#c0392b" : r.tone === "warn" ? "#c78a2c" : "#3d7a4e";
-              return (
-                <div key={r.category} style={S.budgetRow}>
-                  <div style={S.budgetTop}>
-                    <span style={{ fontWeight: 700, color: "#1a2b3c" }}>{r.category}</span>
-                    <span style={{ fontSize: 13, color: "#3d4c59" }}>
-                      <b>{money(r.spent)}</b> <span style={{ color: "#8a97a8" }}>of {money(r.budget)}</span>
-                    </span>
-                  </div>
-                  <div style={S.budgetBar}>
-                    <div style={{ ...S.budgetFill, width: `${Math.min(100, r.frac * 100)}%`, background: col }} />
-                    {monthFrac > 0 && monthFrac < 1 && (
-                      <div style={{ ...S.paceMark, left: `${monthFrac * 100}%` }} title="where you'd be if spending evenly" />
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, marginTop: 4, color: r.tone === "ok" ? "#6b7c8c" : col,
-                    fontWeight: r.tone === "ok" ? 400 : 700 }}>{r.text}</div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* ---- savings: set aside before "left over" ---- */}
-      {moneyReady && !entry && (
-        <div style={S.section}>
-          <div style={S.headerRow}>
-            <h3 style={S.sectionTitle}>Savings</h3>
-            {!goalForm && goals.length > 0 && <button style={S.ghostBtn} onClick={() => startGoal(null)}>+ Goal</button>}
-          </div>
-
-          {goalForm ? (
-            <div style={S.editCard}>
-              <div style={{ fontWeight: 800, color: "#1a2b3c" }}>{goalForm.id ? "Edit goal" : "New savings goal"}</div>
-              <label style={S.label}>Name</label>
-              <input style={S.input} value={goalForm.name} onChange={(e) => setGoalForm((g) => ({ ...g, name: e.target.value }))} />
-              <label style={S.label}>Set aside each month</label>
-              <input style={S.input} inputMode="decimal" placeholder="e.g. 100" value={goalForm.monthly}
-                onChange={(e) => setGoalForm((g) => ({ ...g, monthly: e.target.value }))} />
-              <label style={S.label}>Goal total (optional)</label>
-              <input style={S.input} inputMode="decimal" placeholder="e.g. 1000" value={goalForm.target}
-                onChange={(e) => setGoalForm((g) => ({ ...g, target: e.target.value }))} />
-              <label style={S.label}>Already saved toward it (optional)</label>
-              <input style={S.input} inputMode="decimal" placeholder="0" value={goalForm.start}
-                onChange={(e) => setGoalForm((g) => ({ ...g, start: e.target.value }))} />
-              <p style={S.hint}>This amount comes off your "left over" every month, so savings happens first.</p>
-              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-                <button style={S.saveBtn} onClick={saveGoal}>Save</button>
-                <button style={S.cancelBtn} onClick={() => setGoalForm(null)}>Cancel</button>
-              </div>
-            </div>
-          ) : goals.length === 0 ? (
-            <div style={S.emptyCard}>
-              <div style={{ fontSize: 13.5, color: "#3d4c59", lineHeight: 1.45 }}>
-                Pay yourself first. A savings goal comes off the top each month, before anything
-                counts as "left over" — so it doesn't just become whatever's left at the end.
-              </div>
-              <button style={{ ...S.addBtn, marginTop: 10 }} onClick={() => startGoal(null)}>Start a savings goal</button>
-            </div>
-          ) : (
-            goals.map((g) => {
-              const m = movedFor(g), saved = savedTotal(g), target = Number(g.target_amount || 0);
-              const pctT = target > 0 ? Math.min(1, saved / target) : 0;
-              const monthly = Number(g.monthly_amount || 0);
-              const togo = target > 0 && monthly > 0 && saved < target ? Math.ceil((target - saved) / monthly) : null;
-              return (
-                <div key={g.id} style={S.goalCard}>
-                  <div style={S.budgetTop}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 700, color: "#1a2b3c" }}>
-                      <PiggyIcon size={17} color="#3d7a4e" />{g.name}
-                    </span>
-                    <span style={{ display: "flex", gap: 2 }}>
-                      <button style={S.iconBtn} onClick={() => startGoal(g)}>✎</button>
-                      <button style={{ ...S.iconBtn, color: "#c0392b" }} onClick={() => removeGoal(g)}>✕</button>
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12.5, color: "#6b7c8c", margin: "2px 0 8px" }}>
-                    {money(monthly)} a month{target > 0 ? ` toward ${money(target)}` : ""}
-                  </div>
-                  {target > 0 && (
-                    <>
-                      <div style={S.budgetBar}><div style={{ ...S.budgetFill, width: `${pctT * 100}%`, background: "#3d7a4e" }} /></div>
-                      <div style={{ fontSize: 12, color: "#3d4c59", margin: "4px 0 8px" }}>
-                        <b>{money(saved)}</b> saved · {Math.round(pctT * 100)}%
-                        {saved >= target ? " — goal reached" : togo ? ` · about ${togo} month${togo === 1 ? "" : "s"} to go` : ""}
-                      </div>
-                    </>
-                  )}
-                  {target === 0 && (
-                    <div style={{ fontSize: 12, color: "#3d4c59", marginBottom: 8 }}><b>{money(saved)}</b> saved so far</div>
-                  )}
-
-                  {moving && moving.goal.id === g.id ? (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <span style={{ color: "#8a97a8" }}>$</span>
-                      <input style={{ ...S.input, flex: 1, padding: "8px 10px" }} inputMode="decimal" autoFocus
-                        value={moving.value} onChange={(e) => setMoving((x) => ({ ...x, value: e.target.value }))} />
-                      <button style={{ ...S.saveBtn, flex: "0 0 auto", padding: "9px 16px" }} onClick={confirmMove}>Set aside</button>
-                      <button style={{ ...S.cancelBtn, flex: "0 0 auto", padding: "9px 12px" }} onClick={() => setMoving(null)}>✕</button>
-                    </div>
-                  ) : m ? (
-                    <div style={S.movedRow}>
-                      <span>✓ {money(m.amount)} set aside {period === monthKey() ? "this month" : `in ${monthLabel(period)}`}</span>
-                      <button style={S.undoBtn} onClick={() => undoMove(g)}>Undo</button>
-                    </div>
-                  ) : (
-                    <button style={S.moveBtn} onClick={() => setMoving({ goal: g, value: String(monthly || "") })}>
-                      Mark this month's {money(monthly)} as set aside
-                    </button>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* ---- add / edit ---- */}
-      <div style={S.headerRow}>
-        <h3 style={S.sectionTitle}>Bills</h3>
-        {!editing && (
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              style={{ ...S.scanBtn, ...(scanning ? { opacity: 0.6 } : {}) }}
-              disabled={scanning}
-              onClick={() => fileRef.current && fileRef.current.click()}
-            >
-              <ScanIcon size={15} color="#2c5f7c" />
-              <span>{scanning ? "Reading…" : "Scan"}</span>
-            </button>
-            <button style={S.addBtn} onClick={startNew}>+ Add bill</button>
-          </div>
+          </>
         )}
+
+        {/* ======================= SPENDING ======================= */}
+        {tab === "spending" && (
+          <>
+            <div style={S.card}>
+              <div style={S.cardHeadRow}>
+                <span style={S.cardHead}>Budgets</span>
+                {!budgetDraft && budgetRows.length > 0 && <button style={S.ghost} onClick={startBudgets}>Edit</button>}
+              </div>
+              {budgetDraft ? (
+                <>
+                  <div style={S.muted}>Monthly targets. Leave a box empty to not budget it.</div>
+                  {SPEND_CATS.map((c) => (
+                    <div key={c} style={S.budgetEdit}>
+                      <span style={{ ...S.catDot, background: SPEND_COLOR[c] }} />
+                      <span style={{ flex: 1 }}>{c}</span>
+                      <span style={{ color: C.faint }}>$</span>
+                      <input style={{ ...S.input, width: 110, marginTop: 0 }} inputMode="decimal" placeholder="—"
+                        value={budgetDraft[c]} onChange={(e) => setBudgetDraft((d) => ({ ...d, [c]: e.target.value }))} />
+                    </div>
+                  ))}
+                  <div style={S.formBtns}>
+                    <button style={S.primary} onClick={saveBudgets}>Save budgets</button>
+                    <button style={S.secondary} onClick={() => setBudgetDraft(null)}>Cancel</button>
+                  </div>
+                </>
+              ) : budgetRows.length === 0 ? (
+                <>
+                  <div style={S.muted}>Give groceries, gas, and eating out a monthly target. You'll get a warning when you're spending faster than the month is passing.</div>
+                  <button style={{ ...S.primary, marginTop: 12 }} onClick={startBudgets}>Set budgets</button>
+                </>
+              ) : budgetRows.map((r) => {
+                const col = r.tone === "over" ? C.red : r.tone === "warn" ? C.amber : C.green;
+                return (
+                  <div key={r.category} style={S.budgetRow}>
+                    <div style={S.budgetTop}>
+                      <span style={{ fontWeight: 700 }}>{r.category}</span>
+                      <span><b>{money(r.spent)}</b> <span style={{ color: C.faint }}>of {money(r.budget)}</span></span>
+                    </div>
+                    <Bar frac={r.frac} color={col} mark={monthFrac} />
+                    <div style={{ fontSize: 12.5, marginTop: 5, color: r.tone === "ok" ? C.dim : col, fontWeight: r.tone === "ok" ? 400 : 700 }}>{r.text}</div>
+                  </div>
+                );
+              })}
+              {budgetRows.length > 0 && !budgetDraft && monthFrac > 0 && monthFrac < 1 && (
+                <div style={S.legend}><span style={S.legendMark} /> where you'd be spending evenly</div>
+              )}
+            </div>
+
+            <div style={S.card}>
+              <div style={S.cardHeadRow}>
+                <span style={S.cardHead}>All spending</span>
+                <span style={S.cardTotal}>{money(spendTotal)}</span>
+              </div>
+              {spending.length === 0 ? <div style={S.muted}>Nothing logged this month. Tap + to add a purchase.</div> :
+                spendingByDay.map(([day, rows]) => (
+                  <div key={day}>
+                    <div style={S.dayHead}>{shortDate(day)}</div>
+                    {rows.map((r) => (
+                      <div key={r.id} style={S.row}>
+                        <span style={{ ...S.catDot, background: SPEND_COLOR[r.category] }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={S.rowName}>{r.note || r.category}</div>
+                          <div style={S.rowMeta}>{r.note ? `${r.category} · ` : ""}{personName(r.who)}</div>
+                        </div>
+                        <span style={S.rowAmt}>−{money(r.amount)}</span>
+                        <button style={S.more} aria-label="Options" onClick={() => rowMenu(`${r.note || r.category} · ${money(r.amount)}`,
+                          [{ label: "Delete", icon: "trash", danger: true, onClick: () => deleteEntry("spend", r) }])}><Icon name="more" size={18} /></button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
+
+        {/* ======================= BILLS ======================= */}
+        {tab === "bills" && (
+          <>
+            <div style={S.card}>
+              <div style={S.cardHeadRow}>
+                <span style={S.cardHead}>{billsLeft > 0 ? `${money(billsLeft)} still to pay` : visible.length ? "All paid" : "Bills"}</span>
+                <span style={{ color: C.dim, fontSize: 13 }}>{visible.filter(isPaid).length} of {visible.length} paid</span>
+              </div>
+              <Bar frac={billsTotal > 0 ? billsPaid / billsTotal : 0} color={C.green} />
+              <div style={{ ...S.formBtns, marginTop: 14 }}>
+                <button style={S.primary} onClick={startNew}><Icon name="plus" size={16} /><span>Add bill</span></button>
+                <button style={S.secondary} disabled={!!reading} onClick={() => billScanRef.current && billScanRef.current.click()}>
+                  <Icon name="scan" size={16} /><span>{reading === "bill" ? "Reading…" : "Scan a bill"}</span></button>
+              </div>
+            </div>
+
+            {editing && (
+              <div style={S.card}>
+                <div style={S.cardHead}>{editing.id ? "Edit bill" : "New bill"}</div>
+                {scanNote && <div style={scanNote.tone === "warn" ? S.noteWarn : S.noteOk}>{scanNote.text}</div>}
+                <label style={S.label}>Name</label>
+                <input style={S.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Electric" />
+                <label style={S.label}>{variable ? "Usual amount (estimate)" : "Amount"}</label>
+                <input style={S.input} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+                <label style={S.label}>How often</label>
+                <div style={S.chips}>
+                  {[["monthly", "Every month"], ["once", "One time"]].map(([v, l]) => (
+                    <button key={v} style={{ ...S.chip, ...(recurrence === v ? S.chipOn : {}) }} onClick={() => setRecurrence(v)}>{l}</button>
+                  ))}
+                </div>
+                {recurrence === "monthly" ? (
+                  <><label style={S.label}>Day of the month it's due</label>
+                    <input style={S.input} type="number" inputMode="numeric" min="1" max="31" value={dueDay} onChange={(e) => setDueDay(e.target.value)} />
+                    <div style={S.hint}>Resets to unpaid on the 1st of each month.</div></>
+                ) : (
+                  <><label style={S.label}>Date it's due</label>
+                    <input style={S.input} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                    <div style={S.hint}>Shows only in that month.</div></>
+                )}
+                <label style={S.label}>Category</label>
+                <div style={S.chips}>
+                  {CATS.map((c) => (
+                    <button key={c} style={{ ...S.chip, ...(cat === c ? { ...S.chipOn, background: CAT_COLOR[c], borderColor: CAT_COLOR[c], color: "#0b0b0d" } : {}) }}
+                      onClick={() => setCat(c)}>{c}</button>
+                  ))}
+                </div>
+                <label style={S.toggle}><input type="checkbox" checked={autopay} onChange={(e) => setAutopay(e.target.checked)} /><span>On autopay</span></label>
+                <label style={S.toggle}><input type="checkbox" checked={variable} onChange={(e) => setVariable(e.target.checked)} /><span>Amount changes each month</span></label>
+                {variable && <div style={S.hint}>When you mark it paid you'll enter the real amount, and that becomes next month's estimate.</div>}
+                <div style={S.divider} />
+                <label style={S.label}>Account number (last 4 is enough)</label>
+                <input style={S.input} value={acctNum} onChange={(e) => setAcctNum(e.target.value)} placeholder="e.g. 4471" />
+                <label style={S.label}>Customer service phone</label>
+                <input style={S.input} type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(501) 555-0142" />
+                <label style={S.label}>Notes</label>
+                <textarea style={{ ...S.input, minHeight: 70, resize: "vertical", fontFamily: "inherit" }} value={notes}
+                  onChange={(e) => setNotes(e.target.value)} placeholder="Login, plan details, who to ask for…" />
+                <div style={S.formBtns}>
+                  <button style={S.primary} onClick={saveBill}>Save</button>
+                  <button style={S.secondary} onClick={() => { setEditing(null); setScanNote(null); }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {!editing && (
+              <div style={S.card}>
+                <div style={{ ...S.cardHead, marginBottom: 4 }}>Due this month</div>
+                {visible.length === 0 ? (
+                  <div style={S.muted}>{bills.length === 0 ? "No bills yet. Add one or scan a statement." : "Nothing due this month."}</div>
+                ) : sortedBills.map((b) => {
+                  const st = statusOf(b), paid = isPaid(b);
+                  const acts = [];
+                  if (b.account_number || b.phone || b.notes) acts.push({ label: "Account details", icon: "info", onClick: () => setDetails(b) });
+                  acts.push({ label: "Payment history", icon: "history", onClick: () => openHistory(b) });
+                  acts.push({ label: "Edit bill", icon: "edit", onClick: () => startEdit(b) });
+                  acts.push({ label: "Delete bill", icon: "trash", danger: true, onClick: () => removeBill(b) });
+                  return (
+                    <div key={b.id} style={{ ...S.billRow, opacity: paid ? 0.55 : 1 }}>
+                      <button style={{ ...S.checkBtn, ...(paid ? S.checkOn : {}) }} aria-label={paid ? "Mark unpaid" : "Mark paid"}
+                        onClick={() => togglePaid(b)}>{paid && <Icon name="check" size={18} color="#0b0b0d" stroke={3} />}</button>
+                      <button style={S.billMain} onClick={() => togglePaid(b)}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ ...S.rowName, textDecoration: paid ? "line-through" : "none" }}>{b.name}</span>
+                          {b.autopay && <span style={S.tag}>AUTO</span>}
+                          {b.variable && <span style={S.tag}>VARIES</span>}
+                          {b.recurrence === "once" && <span style={S.tag}>ONE TIME</span>}
+                        </div>
+                        <div style={S.rowMeta}>
+                          <span style={{ ...S.catDot, background: CAT_COLOR[b.category] || C.dim, marginRight: 6 }} />
+                          {`${b.category} ·\u00a0`}<span style={{ color: st.color, fontWeight: 700 }}>{st.label}</span>
+                        </div>
+                      </button>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={S.rowAmt}>{money(amtFor(b))}</div>
+                        {b.variable && !paid && <div style={{ fontSize: 10.5, color: C.faint }}>est.</div>}
+                      </div>
+                      <button style={S.more} aria-label="Bill options" onClick={() => rowMenu(b.name, acts)}><Icon name="more" size={18} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ======================= SAVINGS ======================= */}
+        {tab === "savings" && (
+          <>
+            {goalForm ? (
+              <div style={S.card}>
+                <div style={S.cardHead}>{goalForm.id ? "Edit goal" : "New savings goal"}</div>
+                <label style={S.label}>Name</label>
+                <input style={S.input} value={goalForm.name} onChange={(e) => setGoalForm((g) => ({ ...g, name: e.target.value }))} />
+                <label style={S.label}>Set aside each month</label>
+                <input style={S.input} inputMode="decimal" placeholder="e.g. 100" value={goalForm.monthly} onChange={(e) => setGoalForm((g) => ({ ...g, monthly: e.target.value }))} />
+                <label style={S.label}>Goal total (optional)</label>
+                <input style={S.input} inputMode="decimal" placeholder="e.g. 1000" value={goalForm.target} onChange={(e) => setGoalForm((g) => ({ ...g, target: e.target.value }))} />
+                <label style={S.label}>Already saved toward it (optional)</label>
+                <input style={S.input} inputMode="decimal" placeholder="0" value={goalForm.start} onChange={(e) => setGoalForm((g) => ({ ...g, start: e.target.value }))} />
+                <div style={S.hint}>This comes off "safe to spend" every month, so saving happens first.</div>
+                <div style={S.formBtns}>
+                  <button style={S.primary} onClick={saveGoal}>Save</button>
+                  <button style={S.secondary} onClick={() => setGoalForm(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : goals.length === 0 ? (
+              <div style={S.card}>
+                <div style={S.cardHead}>Pay yourself first</div>
+                <div style={S.muted}>A savings goal comes off the top every month — before anything counts as safe to spend — so it doesn't just become whatever's left at the end.</div>
+                <button style={{ ...S.primary, marginTop: 12 }} onClick={() => startGoal(null)}><Icon name="piggy" size={17} /><span>Start a savings goal</span></button>
+              </div>
+            ) : (
+              <>
+                {goals.map((g) => {
+                  const m = movedFor(g), saved = savedTotal(g), target = Number(g.target_amount || 0), monthly = Number(g.monthly_amount || 0);
+                  const pct = target > 0 ? Math.min(1, saved / target) : 0;
+                  const togo = target > 0 && monthly > 0 && saved < target ? Math.ceil((target - saved) / monthly) : null;
+                  return (
+                    <div key={g.id} style={S.card}>
+                      <div style={S.cardHeadRow}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8, ...S.cardHead }}><Icon name="piggy" size={18} color={C.gold} />{g.name}</span>
+                        <button style={S.more} aria-label="Goal options" onClick={() => rowMenu(g.name, [
+                          { label: "Edit goal", icon: "edit", onClick: () => startGoal(g) },
+                          { label: "Stop tracking", icon: "trash", danger: true, onClick: () => removeGoal(g) }])}><Icon name="more" size={18} /></button>
+                      </div>
+                      <div style={S.goalBig}>{money(saved)}<span style={S.goalOf}>{target > 0 ? ` of ${money(target)}` : " saved"}</span></div>
+                      {target > 0 && <Bar frac={pct} color={C.gold} />}
+                      <div style={{ ...S.muted, marginTop: 6 }}>
+                        {money(monthly)} a month
+                        {target > 0 ? (saved >= target ? " · goal reached" : togo ? ` · about ${togo} month${togo === 1 ? "" : "s"} to go` : "") : ""}
+                      </div>
+                      {moving && moving.goal.id === g.id ? (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+                          <input style={{ ...S.input, flex: 1, marginTop: 0 }} inputMode="decimal" autoFocus value={moving.value}
+                            onChange={(e) => setMoving((x) => ({ ...x, value: e.target.value }))} />
+                          <button style={{ ...S.primary, flex: "0 0 auto" }} onClick={confirmMove}>Set aside</button>
+                          <button style={{ ...S.secondary, flex: "0 0 auto", padding: "12px 14px" }} onClick={() => setMoving(null)}><Icon name="close" size={16} /></button>
+                        </div>
+                      ) : m ? (
+                        <div style={S.moved}><span style={{ display: "flex", gap: 8, alignItems: "center" }}><Icon name="check" size={16} color={C.green} stroke={3} />
+                          {money(m.amount)} set aside {viewingThisMonth ? "this month" : `in ${monthLabel(period)}`}</span>
+                          <button style={S.linkBtn} onClick={() => undoMove(g)}>Undo</button></div>
+                      ) : (
+                        <button style={{ ...S.secondary, width: "100%", marginTop: 12 }} onClick={() => setMoving({ goal: g, value: String(monthly || "") })}>
+                          I moved this month's {money(monthly)}</button>
+                      )}
+                    </div>
+                  );
+                })}
+                <button style={{ ...S.secondary, width: "100%" }} onClick={() => startGoal(null)}><Icon name="plus" size={16} /><span>Another goal</span></button>
+              </>
+            )}
+          </>
+        )}
+        <div style={{ height: 110 }} />
       </div>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        onChange={onPickPhoto}
-        style={{ display: "none" }}
-      />
-
-      {scanning && (
-        <div style={S.scanNoteBox}>Reading the bill… this takes a few seconds.</div>
+      {/* ---- the + button: log anything from any tab ---- */}
+      {!overlayOpen && !editing && !goalForm && !budgetDraft && moneyReady && (
+        <button style={S.fab} aria-label="Log spending" onClick={() => openQuickLog("spend")}><Icon name="plus" size={28} color="#0b0b0d" stroke={2.6} /></button>
       )}
 
-      {scanError && !scanning && (
-        <div style={S.errNote}>
-          <span style={{ flex: 1 }}>{scanError}</span>
-          <button style={S.iconBtn} onClick={() => setScanError(null)}>✕</button>
-        </div>
-      )}
+      <input ref={receiptRef} type="file" accept="image/*" onChange={onPickReceipt} style={{ display: "none" }} />
+      <input ref={billScanRef} type="file" accept="image/*" onChange={onPickBill} style={{ display: "none" }} />
 
-      {editing && (
-        <div style={S.editCard}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
-            {editing.id ? "Edit bill" : "New bill"}
-          </div>
-          {scanNote && (
-            <div style={scanNote.tone === "warn" ? S.noteWarn : S.noteOk}>
-              {scanNote.text}
+      {/* ======================= QUICK LOG SHEET ======================= */}
+      {ql && (
+        <div style={S.scrim} onClick={() => setQl(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.qlTop}>
+              <div style={S.seg}>
+                {[["spend", "Spending"], ["income", "Paycheck"]].map(([m, l]) => (
+                  <button key={m} style={{ ...S.segBtn, ...(ql.mode === m ? S.segOn : {}) }}
+                    onClick={() => { if (ql.mode !== m) { setQl((q) => ({ ...q, mode: m, amount: "", prefilled: false, receipt: null })); if (m === "income") prefillPay(ql.who); } }}>{l}</button>
+                ))}
+              </div>
+              <button style={S.closeX} aria-label="Close" onClick={() => setQl(null)}><Icon name="close" size={20} /></button>
             </div>
-          )}
-          <label style={S.label}>Name</label>
-          <input style={S.input} value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="e.g., Electric" />
-          <label style={S.label}>Amount</label>
-          <input style={S.input} type="number" inputMode="decimal" step="0.01" min="0"
-            value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="142.50" />
-          <label style={S.label}>How often</label>
-          <div style={S.chipRow}>
-            <button
-              style={{ ...S.chip, ...(recurrence === "monthly" ? S.chipOn : {}) }}
-              onClick={() => setRecurrence("monthly")}
-            >🔁 Every month</button>
-            <button
-              style={{ ...S.chip, ...(recurrence === "once" ? S.chipOn : {}) }}
-              onClick={() => setRecurrence("once")}
-            >1️⃣ One time</button>
-          </div>
 
-          {recurrence === "monthly" ? (
-            <>
-              <label style={S.label}>Day of month it's due</label>
-              <input style={S.input} type="number" inputMode="numeric" min="1" max="31"
-                value={dueDay} onChange={(e) => setDueDay(e.target.value)} placeholder="15" />
-              <p style={S.hint}>Resets to unpaid on the 1st of each month.</p>
-            </>
-          ) : (
-            <>
-              <label style={S.label}>Date it's due</label>
-              <input style={S.input} type="date"
-                value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-              <p style={S.hint}>Shows only in that month, then disappears once it's behind you.</p>
-            </>
-          )}
-          <label style={S.label}>Category</label>
-          <div style={S.chipRow}>
-            {CATS.map((c) => (
-              <button key={c}
-                style={{ ...S.chip, ...(cat === c ? { background: CAT_COLOR[c], color: "#fff", borderColor: CAT_COLOR[c] } : {}) }}
-                onClick={() => setCat(c)}>{c}</button>
-            ))}
-          </div>
-          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <input type="checkbox" checked={autopay} onChange={(e) => setAutopay(e.target.checked)} />
-            <span>On autopay</span>
-          </label>
-          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-            <input type="checkbox" checked={variable} onChange={(e) => setVariable(e.target.checked)} />
-            <span>Amount changes each month (electric, water, gas…)</span>
-          </label>
-          {variable && (
-            <p style={S.hint}>
-              The amount above is just an estimate. When you mark it paid you'll enter what it
-              actually was, and that becomes next month's estimate.
-            </p>
-          )}
+            {ql.receipt && <div style={ql.receipt.tone === "warn" ? S.noteWarn : S.noteOk}>{ql.receipt.text}</div>}
 
-          <div style={S.divider} />
+            <div style={{ ...S.qlAmount, color: ql.amount && !ql.prefilled ? C.text : C.faint }}>
+              ${ql.amount || "0"}
+            </div>
+            {ql.mode === "income" && ql.prefilled && <div style={S.qlHint}>{personName(ql.who)}'s last paycheck — type over it if this one's different</div>}
 
-          <label style={S.label}>Account number</label>
-          <input style={S.input} value={acctNum} inputMode="text"
-            onChange={(e) => setAcctNum(e.target.value)}
-            placeholder="e.g., 4471 or ****4471" />
-          <p style={S.hint}>
-            The last 4 digits are usually all you need to identify yourself on a call — and safer to store.
-          </p>
-
-          <label style={S.label}>Customer service phone</label>
-          <input style={S.input} type="tel" inputMode="tel" value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="(501) 555-0142" />
-
-          <label style={S.label}>Notes</label>
-          <textarea style={{ ...S.input, minHeight: 74, resize: "vertical", fontFamily: "inherit" }}
-            value={notes} onChange={(e) => setNotes(e.target.value)}
-            placeholder="Login, due-date quirks, who to ask for, plan details…" />
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button style={S.saveBtn} onClick={save}>Save</button>
-            <button style={S.cancelBtn} onClick={() => { setEditing(null); setScanNote(null); }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* ---- list ---- */}
-      {visible.length === 0 && !editing ? (
-        <div style={S.empty}>
-          <div style={{ fontSize: 40 }}>🧾</div>
-          <p style={{ color: "#6b7c8c", marginTop: 8 }}>
-            {bills.length === 0
-              ? 'No bills yet. Tap "+ Add bill" to track your first one.'
-              : "Nothing due this month."}
-          </p>
-        </div>
-      ) : (
-        sorted.map((b) => {
-          const st = statusOf(b);
-          const paid = isPaid(b);
-          return (
-            <div key={b.id} style={{ ...S.billRow, opacity: paid ? 0.62 : 1 }}>
-              <div
-                style={{ ...S.check, ...(paid ? S.checkOn : {}) }}
-                onClick={() => togglePaid(b)}
-              >{paid ? "✓" : ""}</div>
-              <div style={{ flex: 1 }} onClick={() => togglePaid(b)}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span style={{ ...S.billName, textDecoration: paid ? "line-through" : "none" }}>
-                    {b.name}
-                  </span>
-                  {b.autopay && <span style={S.autoTag}>AUTO</span>}
-                  {b.recurrence === "once" && <span style={S.onceTag}>ONE TIME</span>}
-                  {b.variable && <span style={S.varTag}>VARIES</span>}
-                </div>
-                <div style={S.billMeta}>
-                  <span style={{ ...S.catDot, background: CAT_COLOR[b.category] || "#6b7c8c" }} />
-                  <span>{b.category}</span>
-                  <span style={{ color: st.color, fontWeight: 700 }}>· {st.label}</span>
-                </div>
+            {ql.mode === "spend" && (
+              <div style={S.qlCats}>
+                {catOrder.map((c) => (
+                  <button key={c} style={{ ...S.qlCat, ...(ql.category === c ? { background: SPEND_COLOR[c], borderColor: SPEND_COLOR[c], color: "#0b0b0d" } : {}) }}
+                    onClick={() => setQl((q) => ({ ...q, category: c }))}>{c}</button>
+                ))}
               </div>
-              <div style={S.amount}>
-                {money(amtFor(b))}
-                {b.variable && !paid && <div style={S.estTag}>est.</div>}
+            )}
+
+            <div style={S.qlRow}>
+              <div style={S.seg}>
+                {PEOPLE.map((p) => (
+                  <button key={p.id} style={{ ...S.segBtn, ...(ql.who === p.id ? S.segOn : {}) }}
+                    onClick={() => { setQl((q) => ({ ...q, who: p.id, ...(q.mode === "income" && (q.prefilled || !q.amount) ? { amount: "", prefilled: false } : {}) }));
+                      if (ql.mode === "income") prefillPay(p.id); }}>{p.name}</button>
+                ))}
               </div>
-              <button style={S.iconBtn} title="Payment history"
-                onClick={() => openHistory(b)}>📊</button>
-              {(b.account_number || b.phone || b.notes) && (
-                <button style={S.iconBtn} title="Account details"
-                  onClick={() => setDetails(b)}>
-                  <InfoIcon size={15} color="#6b7c8c" />
-                </button>
+              <button style={S.linkBtn} onClick={() => setQl((q) => ({ ...q, showMore: !q.showMore }))}>
+                {ql.showMore ? "Less" : ql.date !== todayIso() ? shortDate(ql.date) : "Date & note"}</button>
+              {ql.mode === "spend" && (
+                <button style={S.qlScan} aria-label="Scan a receipt" disabled={!!reading} onClick={() => receiptRef.current && receiptRef.current.click()}>
+                  <Icon name="receipt" size={18} color={C.gold} /></button>
               )}
-              <button style={S.iconBtn} onClick={() => startEdit(b)}>✎</button>
-              <button style={{ ...S.iconBtn, color: "#c0392b" }} onClick={() => remove(b)}>✕</button>
             </div>
-          );
-        })
+            {reading === "receipt" && <div style={S.qlHint}>Reading the receipt…</div>}
+            {ql.showMore && (
+              <div style={S.qlMore}>
+                <input style={{ ...S.input, marginTop: 0 }} type="date" value={ql.date} onChange={(e) => setQl((q) => ({ ...q, date: e.target.value }))} />
+                <input style={S.input} value={ql.note} placeholder={ql.mode === "income" ? "Note — e.g. overtime week" : "Store or note — e.g. Kroger"}
+                  onChange={(e) => setQl((q) => ({ ...q, note: e.target.value }))} />
+              </div>
+            )}
+
+            <div style={S.keypad}>
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"].map((k) => (
+                <button key={k} style={S.key} aria-label={k === "⌫" ? "Delete digit" : k} onClick={() => keypad(k)}>
+                  {k === "⌫" ? <Icon name="backspace" size={22} /> : k}</button>
+              ))}
+            </div>
+            <button style={{ ...S.primary, ...S.qlSave, opacity: num(ql.amount) > 0 ? 1 : 0.45 }} onClick={saveQuickLog}>
+              {ql.mode === "income" ? "Log paycheck" : `Log ${ql.category.toLowerCase()}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- row menu ---- */}
+      {sheet && (
+        <div style={S.scrim} onClick={() => setSheet(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.sheetTitle}>{sheet.title}</div>
+            {sheet.actions.map((a) => (
+              <button key={a.label} style={{ ...S.sheetAct, color: a.danger ? C.red : C.text }}
+                onClick={() => { setSheet(null); a.onClick(); }}>
+                <Icon name={a.icon} size={19} /><span>{a.label}</span></button>
+            ))}
+            <button style={{ ...S.secondary, width: "100%", marginTop: 8 }} onClick={() => setSheet(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- what did a variable bill actually cost? ---- */}
+      {askAmount && (
+        <div style={S.scrim} onClick={() => setAskAmount(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.sheetTitle}>{askAmount.bill.name}</div>
+            <div style={S.muted}>How much was it this month?</div>
+            <input style={{ ...S.input, fontSize: 26, fontWeight: 800, textAlign: "center" }} inputMode="decimal" autoFocus
+              value={askAmount.value} onChange={(e) => setAskAmount({ ...askAmount, value: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") confirmAmount(); }} />
+            <div style={S.hint}>Last time: {money(askAmount.bill.amount)}</div>
+            <div style={S.formBtns}>
+              <button style={S.primary} onClick={confirmAmount}>Mark paid</button>
+              <button style={S.secondary} onClick={() => setAskAmount(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ---- account details ---- */}
       {details && (
-        <div style={S.modalWrap} onClick={() => setDetails(null)}>
-          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={S.modalName}>{details.name}</div>
-            <p style={S.modalSub}>Account details</p>
-
+        <div style={S.scrim} onClick={() => setDetails(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.sheetTitle}>{details.name}</div>
             {details.account_number && (
-              <div style={S.detailBlock}>
-                <div style={S.detailLabel}>Account number</div>
-                <div style={S.detailRow}>
-                  <span style={S.detailMono}>{details.account_number}</span>
-                  <button style={S.copyBtn} onClick={() => copyText(details.account_number)}>
-                    Copy
-                  </button>
-                </div>
-              </div>
+              <div style={S.detail}><div style={S.detailLbl}>Account number</div>
+                <div style={S.detailRow}><span style={S.mono}>{details.account_number}</span>
+                  <button style={S.ghost} onClick={() => { copyText(details.account_number); flash("Copied"); }}>Copy</button></div></div>
             )}
-
             {details.phone && (
-              <div style={S.detailBlock}>
-                <div style={S.detailLabel}>Customer service</div>
-                <div style={S.detailRow}>
-                  <a href={`tel:${details.phone.replace(/[^\d+]/g, "")}`} style={S.detailLink}>
-                    {details.phone}
-                  </a>
-                  <button style={S.copyBtn} onClick={() => copyText(details.phone)}>
-                    Copy
-                  </button>
-                </div>
-              </div>
+              <div style={S.detail}><div style={S.detailLbl}>Customer service</div>
+                <div style={S.detailRow}><a href={`tel:${details.phone.replace(/[^\d+]/g, "")}`} style={S.tel}>{details.phone}</a>
+                  <button style={S.ghost} onClick={() => { copyText(details.phone); flash("Copied"); }}>Copy</button></div></div>
             )}
-
-            {details.notes && (
-              <div style={S.detailBlock}>
-                <div style={S.detailLabel}>Notes</div>
-                <div style={S.detailNotes}>{details.notes}</div>
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button style={S.saveBtn}
-                onClick={() => { const b = details; setDetails(null); startEdit(b); }}>
-                Edit
-              </button>
-              <button style={S.cancelBtn} onClick={() => setDetails(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- what did it actually cost this month? ---- */}
-      {askAmount && (
-        <div style={S.modalWrap} onClick={() => setAskAmount(null)}>
-          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={S.modalName}>{askAmount.bill.name}</div>
-            <p style={S.modalSub}>How much was it this month?</p>
-            <input
-              style={{ ...S.input, fontSize: 22, fontWeight: 700, textAlign: "center" }}
-              type="number" inputMode="decimal" step="0.01" min="0"
-              value={askAmount.value}
-              autoFocus
-              onChange={(e) => setAskAmount({ ...askAmount, value: e.target.value })}
-              onKeyDown={(e) => { if (e.key === "Enter") confirmAmount(); }}
-            />
-            <p style={S.hint}>Last time: {money(askAmount.bill.amount)}</p>
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <button style={S.saveBtn} onClick={confirmAmount}>Mark paid</button>
-              <button style={S.cancelBtn} onClick={() => setAskAmount(null)}>Cancel</button>
+            {details.notes && <div style={S.detail}><div style={S.detailLbl}>Notes</div><div style={S.detailNotes}>{details.notes}</div></div>}
+            <div style={S.formBtns}>
+              <button style={S.primary} onClick={() => { const b = details; setDetails(null); setTab("bills"); startEdit(b); }}>Edit</button>
+              <button style={S.secondary} onClick={() => setDetails(null)}>Close</button>
             </div>
           </div>
         </div>
@@ -1353,225 +1088,208 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing })
 
       {/* ---- payment history ---- */}
       {history && (
-        <div style={S.modalWrap} onClick={() => setHistory(null)}>
-          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={S.modalHead}>
-              <div>
-                <div style={S.modalName}>{history.bill.name}</div>
-                <p style={S.modalSub}>What you've paid</p>
-              </div>
-              <button style={S.closeBtn} onClick={() => setHistory(null)}>✕</button>
-            </div>
-
-            {history.rows === null ? (
-              <p style={S.hint}>Loading…</p>
-            ) : history.rows.length === 0 ? (
-              <p style={S.hint}>No payments recorded yet.</p>
-            ) : (
-              <>
-                {(() => {
-                  const vals = history.rows.map((r) => Number(r.amount_paid || 0));
-                  const max = Math.max(...vals, 1);
-                  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-                  return (
-                    <>
-                      <div style={S.histStats}>
-                        <span>avg {money(avg)}</span>
-                        <span>low {money(Math.min(...vals))}</span>
-                        <span>high {money(Math.max(...vals))}</span>
-                      </div>
-                      {history.rows.map((r) => {
-                        const v = Number(r.amount_paid || 0);
-                        return (
-                          <div key={r.period_key} style={S.histRow}>
-                            <span style={S.histMonth}>{monthLabel(r.period_key).replace(/ \d{4}$/, "")}</span>
-                            <div style={S.histBarOuter}>
-                              <div style={{ ...S.histBarInner, width: `${(v / max) * 100}%` }} />
-                            </div>
-                            <span style={S.histAmt}>{money(v)}</span>
-                          </div>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </>
-            )}
+        <div style={S.scrim} onClick={() => setHistory(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.sheetTitle}>{history.bill.name} — what you've paid</div>
+            {history.rows === null ? <div style={S.muted}>Loading…</div> :
+              history.rows.length === 0 ? <div style={S.muted}>No payments recorded yet.</div> : (() => {
+                const vals = history.rows.map((r) => Number(r.amount_paid || 0));
+                const max = Math.max(...vals, 1), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+                return (
+                  <>
+                    <div style={S.histStats}><span>avg {money(avg)}</span><span>low {money(Math.min(...vals))}</span><span>high {money(Math.max(...vals))}</span></div>
+                    {history.rows.map((r) => {
+                      const v = Number(r.amount_paid || 0);
+                      return (
+                        <div key={r.period_key} style={S.histRow}>
+                          <span style={S.histMonth}>{monthLabel(r.period_key).replace(/ \d{4}$/, "").slice(0, 3)}</span>
+                          <div style={{ flex: 1 }}><Bar frac={v / max} color={C.gold} /></div>
+                          <span style={S.histAmt}>{money(v)}</span>
+                        </div>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            <button style={{ ...S.secondary, width: "100%", marginTop: 12 }} onClick={() => setHistory(null)}>Close</button>
           </div>
         </div>
       )}
 
-      {toast && <div style={S.toast}>{toast}</div>}
-      <div style={{ height: 40 }} />
+      {toast && (
+        <div style={S.toast}>
+          <span>{toast.msg}</span>
+          {toast.undo && <button style={S.undo} onClick={toast.undo}>Undo</button>}
+        </div>
+      )}
     </div>
   );
 }
 
+/* ================= styles ================= */
+const font = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 const S = {
-  app: { maxWidth: 560, margin: "0 auto", padding: "0 14px 40px",
-    fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a2b3c" },
-  center: { height: "100vh", display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center", fontFamily: "system-ui" },
-  topbar: { display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "16px 0", borderBottom: "2px solid #e3ebf0", marginBottom: 14 },
-  title: { color: "#2c5f7c", fontSize: 19, margin: 0, fontWeight: 800 },
-  backBtn: { background: "none", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "6px 12px", color: "#2c5f7c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
-  banner: { background: "#fff4e0", border: "1.5px solid #f0c97a", borderRadius: 10,
-    padding: "10px 12px", fontSize: 12.5, color: "#8a5a1a", marginBottom: 12 },
-  monthBar: { display: "flex", alignItems: "center", justifyContent: "space-between",
-    marginBottom: 12 },
-  monthBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 8,
-    width: 40, height: 36, fontSize: 20, color: "#2c5f7c", cursor: "pointer", lineHeight: 1 },
-  monthName: { fontWeight: 800, color: "#2c5f7c", fontSize: 16 },
-  todayBtn: { background: "none", border: "none", color: "#3a7bd5", fontSize: 11.5,
-    cursor: "pointer", textDecoration: "underline", padding: 2 },
-  summary: { background: "linear-gradient(135deg,#20364a,#2c5f7c)", color: "#fff",
-    borderRadius: 14, padding: "14px 16px", marginBottom: 16 },
-  sumRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-end" },
-  sumLabel: { fontSize: 11.5, opacity: 0.85, textTransform: "uppercase", letterSpacing: 0.5 },
-  sumBig: { fontSize: 24, fontWeight: 800, marginTop: 2 },
-  barOuter: { background: "rgba(255,255,255,0.22)", borderRadius: 20, height: 8,
-    margin: "12px 0 6px", overflow: "hidden" },
-  barInner: { background: "#7fe0a0", height: "100%", borderRadius: 20, transition: "width .4s" },
-  sumNote: { fontSize: 12, opacity: 0.9 },
-  leftBig: { fontSize: 32, fontWeight: 800, marginTop: 2, letterSpacing: -0.5 },
-  leftNow: { fontSize: 13, marginTop: 4, opacity: 0.95 },
-  flowRow: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  flowCell: { flex: "1 1 40%", minWidth: 0, background: "rgba(255,255,255,0.1)", borderRadius: 9, padding: "7px 9px" },
-  flowLbl: { fontSize: 10.5, opacity: 0.8, textTransform: "uppercase", letterSpacing: 0.4 },
-  flowVal: { fontSize: 14.5, fontWeight: 700, marginTop: 1 },
-  moneyHint: { fontSize: 12.5, marginTop: 10, background: "rgba(255,255,255,0.1)",
-    borderRadius: 8, padding: "8px 10px" },
-  moneyBtns: { display: "flex", gap: 8, marginBottom: 16 },
-  payBtn: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-    background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 10,
-    padding: "11px 10px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
-  spendBtn: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-    background: "#fff", color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 10,
-    padding: "11px 10px", fontWeight: 700, fontSize: 14, cursor: "pointer" },
-  actBtn: { background: "#fff", color: "#6b7c8c", border: "1.5px solid #dce5ec", borderRadius: 10,
-    padding: "11px 12px", fontWeight: 600, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" },
-  actCard: { background: "#f8fbfd", border: "1.5px solid #dce5ec", borderRadius: 12,
-    padding: 12, marginBottom: 16 },
-  actSummary: { display: "flex", flexWrap: "wrap", gap: 6 },
-  actPill: { fontSize: 12, border: "1.5px solid #c5d4de", borderRadius: 20, padding: "4px 10px",
-    color: "#2c5f7c", background: "#fff" },
-  actRow: { display: "flex", alignItems: "center", gap: 8, padding: "8px 2px",
-    borderBottom: "1px solid #e8eef2" },
-  actDate: { fontSize: 11.5, color: "#8a97a8", width: 46, flexShrink: 0 },
-  actWhat: { flex: 1, fontSize: 13.5, color: "#1a2b3c", minWidth: 0 },
-  actNote: { color: "#8a97a8", fontSize: 12 },
-  actAmt: { fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" },
-  receiptBtn: { flex: "0 0 auto", width: 48, display: "flex", alignItems: "center", justifyContent: "center",
-    background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 10, cursor: "pointer" },
-  actToggle: { display: "block", width: "100%", background: "none", border: "none", color: "#3a7bd5",
-    fontSize: 12.5, cursor: "pointer", textDecoration: "underline", margin: "-8px 0 12px", padding: 2 },
-  section: { marginBottom: 18 },
-  ghostBtn: { background: "#fff", color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "6px 12px", fontWeight: 700, fontSize: 12.5, cursor: "pointer" },
-  emptyCard: { background: "#f8fbfd", border: "1.5px dashed #c5d4de", borderRadius: 12, padding: 14 },
-  budgetRow: { padding: "10px 2px", borderBottom: "1px solid #eef2f5" },
-  budgetTop: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  budgetBar: { position: "relative", height: 9, background: "#e8eef2", borderRadius: 10, marginTop: 7, overflow: "visible" },
-  budgetFill: { height: "100%", borderRadius: 10, transition: "width .35s" },
-  paceMark: { position: "absolute", top: -3, width: 2, height: 15, background: "#1a2b3c", opacity: 0.55,
-    borderRadius: 1, transform: "translateX(-1px)" },
-  budgetEditRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 },
-  dot: { width: 9, height: 9, borderRadius: "50%", flexShrink: 0 },
-  goalCard: { background: "#fff", border: "1.5px solid #dce5ec", borderRadius: 12, padding: 12, marginBottom: 10 },
-  moveBtn: { width: "100%", background: "#eef7f0", color: "#2f6b40", border: "1.5px solid #b9dcc3",
-    borderRadius: 9, padding: "10px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" },
-  movedRow: { display: "flex", justifyContent: "space-between", alignItems: "center", background: "#eef7f0",
-    color: "#2f6b40", borderRadius: 9, padding: "9px 12px", fontWeight: 700, fontSize: 13 },
-  undoBtn: { background: "none", border: "none", color: "#6b7c8c", fontSize: 12, cursor: "pointer",
-    textDecoration: "underline" },
-  headerRow: { display: "flex", justifyContent: "space-between", alignItems: "center",
-    marginBottom: 8 },
-  sectionTitle: { color: "#2c5f7c", fontSize: 16, margin: 0 },
-  addBtn: { background: "#3d7a4e", color: "#fff", border: "none", borderRadius: 8,
-    padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
-  editCard: { background: "#f8fbfd", border: "1.5px solid #c5d4de", borderRadius: 12,
-    padding: 14, marginBottom: 14 },
-  label: { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7c8c",
-    marginTop: 10, marginBottom: 4 },
-  input: { width: "100%", padding: "10px", border: "1.5px solid #c5d4de",
-    borderRadius: 8, fontSize: 15, boxSizing: "border-box" },
-  chipRow: { display: "flex", gap: 5, flexWrap: "wrap" },
-  chip: { padding: "6px 11px", borderRadius: 20, border: "1.5px solid #dce5ec",
-    background: "#fff", color: "#5a6b7a", fontWeight: 600, fontSize: 12, cursor: "pointer" },
-  chipOn: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
-  divider: { height: 1, background: "#e3ebf0", margin: "16px 0 4px" },
-  detailBlock: { marginTop: 12 },
-  detailLabel: { fontSize: 10.5, fontWeight: 700, color: "#9aa8b5",
-    textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 },
-  detailRow: { display: "flex", alignItems: "center", gap: 8,
-    background: "#f4f8fa", border: "1px solid #e3ebf0", borderRadius: 8, padding: "9px 10px" },
-  detailMono: { flex: 1, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: 15, fontWeight: 600, color: "#22303c", wordBreak: "break-all" },
-  detailLink: { flex: 1, fontSize: 15, fontWeight: 700, color: "#2c5f7c", textDecoration: "none" },
-  copyBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 6,
-    padding: "5px 10px", fontSize: 11.5, fontWeight: 700, color: "#2c5f7c",
-    cursor: "pointer", flexShrink: 0 },
-  detailNotes: { background: "#f4f8fa", border: "1px solid #e3ebf0", borderRadius: 8,
-    padding: "9px 10px", fontSize: 13.5, color: "#3d4c59", whiteSpace: "pre-wrap", lineHeight: 1.45 },
-  saveBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none",
-    borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: "pointer" },
-  cancelBtn: { flex: 1, background: "#fff", color: "#6b7c8c", border: "1.5px solid #c5d4de",
-    borderRadius: 8, padding: "11px 0", fontWeight: 600, cursor: "pointer" },
-  billRow: { display: "flex", alignItems: "center", gap: 10, padding: "12px 6px",
-    borderBottom: "1px solid #eef3f6" },
-  check: { flexShrink: 0, width: 26, height: 26, border: "2px solid #2c5f7c",
-    borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
-    color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" },
-  checkOn: { background: "#3d7a4e", borderColor: "#3d7a4e" },
-  billName: { fontSize: 15.5, fontWeight: 600 },
-  autoTag: { fontSize: 9.5, fontWeight: 800, color: "#2c8f8f", background: "#e0f3f3",
-    padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
-  onceTag: { fontSize: 9.5, fontWeight: 800, color: "#7c4adb", background: "#efe8fb",
-    padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
-  hint: { fontSize: 11.5, color: "#8a97a8", margin: "6px 0 0" },
-  varTag: { fontSize: 9.5, fontWeight: 800, color: "#c78a2c", background: "#fdf1dc",
-    padding: "2px 6px", borderRadius: 6, letterSpacing: 0.5 },
-  estTag: { fontSize: 9, color: "#8a97a8", fontWeight: 600, textAlign: "right" },
-  modalWrap: { position: "fixed", inset: 0, background: "rgba(8,14,22,0.72)",
-    display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 200 },
-  modal: { background: "#fff", borderRadius: 16, padding: 18, width: "100%",
-    maxWidth: 380, maxHeight: "86vh", overflowY: "auto",
-    boxShadow: "0 10px 40px rgba(0,0,0,0.35)" },
-  modalHead: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" },
-  modalName: { fontSize: 19, fontWeight: 800, color: "#1a2b3c" },
-  modalSub: { fontSize: 12.5, color: "#6b7c8c", margin: "2px 0 12px" },
-  closeBtn: { background: "none", border: "none", fontSize: 18, cursor: "pointer",
-    color: "#6b7c8c", padding: 4, lineHeight: 1 },
-  histStats: { display: "flex", justifyContent: "space-between", fontSize: 11.5,
-    color: "#6b7c8c", fontWeight: 700, background: "#f4f8fa", borderRadius: 8,
-    padding: "7px 10px", marginBottom: 10 },
-  histRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 7 },
-  histMonth: { fontSize: 11.5, color: "#6b7c8c", width: 62, flexShrink: 0 },
-  histBarOuter: { flex: 1, background: "#eef3f6", borderRadius: 6, height: 14, overflow: "hidden" },
-  histBarInner: { background: "#2c5f7c", height: "100%", borderRadius: 6 },
-  histAmt: { fontSize: 12.5, fontWeight: 700, width: 68, textAlign: "right" },
-  billMeta: { fontSize: 11.5, color: "#6b7c8c", marginTop: 3,
-    display: "flex", alignItems: "center", gap: 5 },
-  catDot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
-  amount: { fontSize: 15.5, fontWeight: 800, color: "#1a2b3c", minWidth: 74, textAlign: "right" },
-  iconBtn: { background: "none", border: "none", fontSize: 14, cursor: "pointer",
-    padding: "4px 5px", opacity: 0.6 },
-  empty: { textAlign: "center", padding: "50px 20px" },
-  scanBtn: { display: "flex", alignItems: "center", gap: 6, background: "#fff",
-    color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
-  scanNoteBox: { background: "#eef6fb", border: "1.5px solid #bcd9ea", borderRadius: 10,
-    padding: "10px 12px", fontSize: 13, color: "#2c5f7c", marginBottom: 12, fontWeight: 600 },
-  errNote: { display: "flex", alignItems: "center", gap: 8, background: "#fdeceb",
-    border: "1.5px solid #f0b4ae", borderRadius: 10, padding: "10px 12px",
-    fontSize: 12.5, color: "#a03027", marginBottom: 12 },
-  noteOk: { background: "#eef6fb", border: "1px solid #bcd9ea", borderRadius: 8,
-    padding: "8px 10px", fontSize: 12, color: "#2c5f7c", marginBottom: 10 },
-  noteWarn: { background: "#fff6e3", border: "1px solid #f0d9a0", borderRadius: 8,
-    padding: "8px 10px", fontSize: 12, color: "#a06a10", marginBottom: 10 },
-  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-    background: "#1a2b3c", color: "#fff", padding: "11px 20px", borderRadius: 30,
-    fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.2)", zIndex: 100, fontSize: 14 },
+  screen: { minHeight: "100vh", width: "100%", background: `radial-gradient(120% 60% at 50% -10%, #17181c 0%, ${C.bg} 55%)`,
+    color: C.text, fontFamily: font, WebkitTapHighlightColor: "transparent" },
+  wrap: { maxWidth: 560, margin: "0 auto", padding: "0 14px" },
+  center: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
+
+  top: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 6px" },
+  backBtn: { display: "inline-flex", alignItems: "center", gap: 4, background: "transparent", color: C.dim,
+    border: `1px solid ${C.lineSoft}`, borderRadius: 999, padding: "8px 14px 8px 10px", fontSize: 13.5, fontWeight: 600, cursor: "pointer", width: 78 },
+  title: { margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 26, fontWeight: 700, letterSpacing: 1,
+    background: "linear-gradient(180deg,#f4dfae 0%,#d6a64e 55%,#a97c2e 100%)", WebkitBackgroundClip: "text",
+    backgroundClip: "text", WebkitTextFillColor: "transparent", color: C.gold },
+
+  monthBar: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 12px" },
+  monthBtn: { width: 44, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: C.card,
+    color: C.dim, border: `1px solid ${C.lineSoft}`, borderRadius: 12, cursor: "pointer" },
+  monthName: { fontWeight: 700, fontSize: 16.5, color: C.text },
+  linkBtn: { background: "none", border: "none", color: C.gold, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "4px 2px" },
+
+  tabs: { position: "sticky", top: 0, zIndex: 5, display: "flex", gap: 4, padding: 4, margin: "0 -2px 14px",
+    background: "rgba(20,20,24,0.94)", backdropFilter: "blur(8px)", border: `1px solid ${C.lineSoft}`, borderRadius: 14 },
+  tab: { flex: 1, background: "transparent", border: "none", color: C.dim, fontWeight: 700, fontSize: 13.5,
+    padding: "10px 4px", borderRadius: 10, cursor: "pointer" },
+  tabOn: { background: "rgba(214,166,78,0.16)", color: C.goldHi },
+  warnBox: { background: "rgba(242,196,109,0.1)", border: `1px solid rgba(242,196,109,0.3)`, color: C.amber,
+    borderRadius: 12, padding: "10px 12px", fontSize: 13, marginBottom: 12 },
+
+  hero: { display: "block", width: "100%", textAlign: "left", background: "linear-gradient(160deg,#1d1c18 0%,#141418 70%)",
+    border: `1px solid rgba(214,166,78,0.28)`, borderRadius: 18, padding: "18px 18px 14px", marginBottom: 12,
+    color: C.text, cursor: "pointer", boxShadow: "0 10px 30px rgba(0,0,0,0.45)" },
+  heroLbl: { fontSize: 11.5, letterSpacing: 1.4, textTransform: "uppercase", color: C.gold, fontWeight: 700 },
+  heroNum: { fontSize: 40, fontWeight: 800, letterSpacing: -1, margin: "4px 0 2px", lineHeight: 1.1 },
+  heroSub: { fontSize: 13, color: C.dim },
+  heroMore: { display: "flex", alignItems: "center", gap: 4, fontSize: 12.5, color: C.gold, marginTop: 10, fontWeight: 600 },
+  breakdown: { marginTop: 12, borderTop: `1px solid ${C.lineSoft}`, paddingTop: 8 },
+  bdRow: { display: "flex", justifyContent: "space-between", fontSize: 14, padding: "5px 0", color: C.dim },
+  bdTotal: { color: C.text, fontWeight: 800, borderTop: `1px solid ${C.lineSoft}`, marginTop: 4, paddingTop: 9 },
+  bdNote: { fontSize: 12.5, color: C.dim, marginTop: 8 },
+
+  actions: { display: "flex", gap: 8, marginBottom: 12 },
+  action: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, background: C.card,
+    color: C.text, border: `1px solid ${C.line}`, borderRadius: 14, padding: "14px 6px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+
+  card: { background: C.card, border: `1px solid ${C.lineSoft}`, borderRadius: 16, padding: "14px 14px", marginBottom: 12 },
+  cardHead: { fontSize: 15.5, fontWeight: 800, color: C.text },
+  cardHeadRow: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 },
+  cardTotal: { fontWeight: 800, color: C.dim, fontSize: 14 },
+  muted: { fontSize: 13.5, color: C.dim, lineHeight: 1.45 },
+  allGood: { display: "flex", alignItems: "center", gap: 9, color: C.dim, fontSize: 14, paddingTop: 6 },
+  alert: { display: "flex", alignItems: "center", gap: 10, width: "100%", background: "transparent", border: "none",
+    borderTop: `1px solid ${C.lineSoft}`, color: C.text, fontSize: 14, padding: "12px 2px", cursor: "pointer", textAlign: "left" },
+  alertDot: { width: 9, height: 9, borderRadius: "50%", flexShrink: 0 },
+
+  row: { display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderTop: `1px solid ${C.lineSoft}` },
+  rowName: { fontSize: 15, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  rowMeta: { fontSize: 12.5, color: C.dim, marginTop: 2, display: "flex", alignItems: "center", flexWrap: "wrap" },
+  rowAmt: { fontSize: 15, fontWeight: 800, color: C.text, whiteSpace: "nowrap" },
+  more: { width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent",
+    border: "none", color: C.dim, borderRadius: 10, cursor: "pointer", flexShrink: 0 },
+  catDot: { display: "inline-block", width: 9, height: 9, borderRadius: "50%", flexShrink: 0 },
+  dayHead: { fontSize: 11.5, letterSpacing: 0.8, textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "12px 0 0" },
+
+  bar: { position: "relative", height: 9, background: "rgba(255,255,255,0.07)", borderRadius: 10, marginTop: 8 },
+  barFill: { height: "100%", borderRadius: 10, transition: "width .35s" },
+  barMark: { position: "absolute", top: -4, width: 2, height: 17, background: C.text, opacity: 0.7, borderRadius: 1, transform: "translateX(-1px)" },
+  budgetRow: { padding: "11px 0", borderTop: `1px solid ${C.lineSoft}` },
+  budgetTop: { display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 14.5 },
+  budgetEdit: { display: "flex", alignItems: "center", gap: 10, padding: "6px 0" },
+  legend: { display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: C.faint, marginTop: 10 },
+  legendMark: { width: 2, height: 13, background: C.text, opacity: 0.7, borderRadius: 1 },
+
+  primary: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+    background: "linear-gradient(180deg,#e2b862,#c8953c)", color: "#1a140a", border: "none", borderRadius: 12,
+    padding: "13px 16px", fontSize: 15, fontWeight: 800, cursor: "pointer" },
+  secondary: { flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, background: C.card2,
+    color: C.text, border: `1px solid ${C.line}`, borderRadius: 12, padding: "13px 16px", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },
+  ghost: { background: "transparent", color: C.gold, border: `1px solid ${C.line}`, borderRadius: 10,
+    padding: "7px 13px", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  formBtns: { display: "flex", gap: 8, marginTop: 16 },
+
+  label: { display: "block", fontSize: 12.5, fontWeight: 700, color: C.dim, margin: "14px 0 5px" },
+  input: { width: "100%", boxSizing: "border-box", background: "#0f0f12", color: C.text, border: `1px solid rgba(255,255,255,0.12)`,
+    borderRadius: 11, padding: "12px 12px", fontSize: 16, marginTop: 8, outline: "none", colorScheme: "dark" },
+  hint: { fontSize: 12, color: C.faint, marginTop: 6, lineHeight: 1.4 },
+  chips: { display: "flex", flexWrap: "wrap", gap: 7 },
+  chip: { background: C.card2, color: C.dim, border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 999,
+    padding: "9px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" },
+  chipOn: { background: "rgba(214,166,78,0.2)", color: C.goldHi, borderColor: "rgba(214,166,78,0.55)" },
+  toggle: { display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.text, marginTop: 14 },
+  divider: { height: 1, background: C.lineSoft, margin: "18px 0 2px" },
+  noteOk: { background: "rgba(127,214,160,0.1)", border: "1px solid rgba(127,214,160,0.3)", color: C.green,
+    borderRadius: 10, padding: "9px 11px", fontSize: 13, margin: "8px 0" },
+  noteWarn: { background: "rgba(242,196,109,0.1)", border: "1px solid rgba(242,196,109,0.32)", color: C.amber,
+    borderRadius: 10, padding: "9px 11px", fontSize: 13, margin: "8px 0" },
+
+  billRow: { display: "flex", alignItems: "center", gap: 8, padding: "10px 0", borderTop: `1px solid ${C.lineSoft}` },
+  checkBtn: { width: 34, height: 34, flexShrink: 0, borderRadius: 10, border: `2px solid rgba(214,166,78,0.55)`,
+    background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 },
+  checkOn: { background: C.green, borderColor: C.green },
+  billMain: { flex: 1, minWidth: 0, background: "transparent", border: "none", textAlign: "left", padding: "4px 2px", cursor: "pointer", color: C.text },
+  tag: { fontSize: 10, fontWeight: 800, letterSpacing: 0.6, color: C.gold, border: `1px solid ${C.line}`, borderRadius: 6, padding: "1px 6px" },
+
+  goalBig: { fontSize: 28, fontWeight: 800, letterSpacing: -0.5, marginTop: 2 },
+  goalOf: { fontSize: 14, fontWeight: 600, color: C.dim, letterSpacing: 0 },
+  moved: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(127,214,160,0.09)",
+    border: "1px solid rgba(127,214,160,0.25)", color: C.green, borderRadius: 12, padding: "10px 12px", fontWeight: 700, fontSize: 14, marginTop: 12 },
+
+  fab: { position: "fixed", right: 18, bottom: "calc(22px + env(safe-area-inset-bottom, 0px))", width: 62, height: 62,
+    borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#e9c06c,#c8953c)", zIndex: 20,
+    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+    boxShadow: "0 10px 28px rgba(0,0,0,0.6), 0 0 0 4px rgba(214,166,78,0.14)" },
+
+  scrim: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)", zIndex: 40, display: "flex", alignItems: "flex-end", justifyContent: "center" },
+  sheet: { width: "100%", maxWidth: 560, maxHeight: "94vh", overflowY: "auto", boxSizing: "border-box", background: "#16161a",
+    borderTop: `1px solid ${C.line}`, borderRadius: "22px 22px 0 0", padding: "8px 16px calc(18px + env(safe-area-inset-bottom, 0px))",
+    color: C.text, fontFamily: font },
+  grab: { width: 42, height: 5, borderRadius: 3, background: "rgba(255,255,255,0.18)", margin: "2px auto 12px" },
+  sheetTitle: { fontSize: 16.5, fontWeight: 800, marginBottom: 8 },
+  sheetAct: { display: "flex", alignItems: "center", gap: 14, width: "100%", background: "transparent", border: "none",
+    borderTop: `1px solid ${C.lineSoft}`, padding: "15px 4px", fontSize: 15.5, fontWeight: 600, cursor: "pointer", textAlign: "left" },
+
+  qlTop: { display: "flex", alignItems: "center", gap: 10 },
+  seg: { display: "flex", background: "#0f0f12", border: `1px solid rgba(255,255,255,0.08)`, borderRadius: 12, padding: 3, flex: 1 },
+  segBtn: { flex: 1, background: "transparent", border: "none", color: C.dim, fontWeight: 700, fontSize: 14,
+    padding: "9px 6px", borderRadius: 9, cursor: "pointer" },
+  segOn: { background: "rgba(214,166,78,0.2)", color: C.goldHi },
+  closeX: { width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent",
+    border: "none", color: C.dim, cursor: "pointer" },
+  qlAmount: { fontSize: 50, fontWeight: 800, textAlign: "center", letterSpacing: -1.5, margin: "16px 0 4px", fontVariantNumeric: "tabular-nums" },
+  qlHint: { textAlign: "center", fontSize: 12.5, color: C.dim, marginBottom: 4 },
+  qlCats: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 7, margin: "12px 0 4px" },
+  qlCat: { background: C.card2, color: C.dim, border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 999,
+    padding: "9px 14px", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  qlRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 12 },
+  qlScan: { width: 44, height: 42, display: "flex", alignItems: "center", justifyContent: "center", background: C.card2,
+    border: `1px solid ${C.line}`, borderRadius: 12, cursor: "pointer", flexShrink: 0 },
+  qlMore: { marginTop: 10 },
+  keypad: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 14 },
+  key: { height: 56, display: "flex", alignItems: "center", justifyContent: "center", background: C.card2, color: C.text,
+    border: `1px solid rgba(255,255,255,0.06)`, borderRadius: 14, fontSize: 24, fontWeight: 600, cursor: "pointer",
+    fontVariantNumeric: "tabular-nums" },
+  qlSave: { width: "100%", marginTop: 12, padding: "16px", fontSize: 16.5 },
+
+  detail: { marginTop: 12 },
+  detailLbl: { fontSize: 11.5, letterSpacing: 0.8, textTransform: "uppercase", color: C.faint, fontWeight: 700, marginBottom: 5 },
+  detailRow: { display: "flex", alignItems: "center", gap: 10, background: "#0f0f12", border: `1px solid rgba(255,255,255,0.08)`,
+    borderRadius: 11, padding: "10px 12px" },
+  mono: { flex: 1, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 16, fontWeight: 700 },
+  tel: { flex: 1, color: C.gold, fontSize: 16, fontWeight: 700, textDecoration: "none" },
+  detailNotes: { background: "#0f0f12", border: `1px solid rgba(255,255,255,0.08)`, borderRadius: 11, padding: "10px 12px",
+    fontSize: 14, color: C.text, whiteSpace: "pre-wrap", lineHeight: 1.45 },
+
+  histStats: { display: "flex", justifyContent: "space-between", fontSize: 12.5, color: C.dim, margin: "4px 0 8px" },
+  histRow: { display: "flex", alignItems: "center", gap: 10, padding: "5px 0" },
+  histMonth: { width: 34, fontSize: 12.5, color: C.dim },
+  histAmt: { width: 82, textAlign: "right", fontSize: 13, fontWeight: 700 },
+
+  toast: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(98px + env(safe-area-inset-bottom, 0px))",
+    zIndex: 60, display: "flex", alignItems: "center", gap: 14, background: "#24242a", color: C.text, border: `1px solid ${C.line}`,
+    borderRadius: 999, padding: "11px 12px 11px 18px", fontSize: 14, fontWeight: 600, boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+    maxWidth: "calc(100% - 32px)", whiteSpace: "nowrap" },
+  undo: { background: "rgba(214,166,78,0.18)", color: C.goldHi, border: "none", borderRadius: 999, padding: "6px 12px",
+    fontSize: 13.5, fontWeight: 800, cursor: "pointer" },
 };
