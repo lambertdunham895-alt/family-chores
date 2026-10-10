@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { SPEND_CATS, monthKey, todayIso, daysInMonth, inPeriod, dayOf, money, fetchMonth, computeMonth } from "./moneyMath.js";
 
 /* =====================================================================
    Money — household cash flow: paychecks, spending, budgets, bills, savings.
@@ -12,7 +13,6 @@ const CAT_COLOR = {
 };
 const PEOPLE = [{ id: "adult_a", name: "Dad" }, { id: "adult_b", name: "Mom" }];
 const personName = (id) => (PEOPLE.find((p) => p.id === id) || { name: "Family" }).name;
-const SPEND_CATS = ["Groceries", "Gas", "Eating out", "Kids", "Household", "Medical", "Fun", "Other"];
 const SPEND_COLOR = {
   Groceries: "#7fc29b", Gas: "#e0b45c", "Eating out": "#f28b82", Kids: "#b39ddb",
   Household: "#7ea6c9", Medical: "#6cc6c6", Fun: "#e58fb5", Other: "#9a9aa3",
@@ -27,21 +27,7 @@ const C = {
 };
 
 /* ---------- dates (local time only — never toISOString, which drifts across midnight UTC) ---------- */
-function monthKey(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function todayIso(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 const isYmd = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
-function inPeriod(bill, period) {
-  if (bill.recurrence !== "once") return true;
-  return (bill.due_date || "").slice(0, 7) === period;
-}
-function dayOf(bill) {
-  if (bill.recurrence === "once" && bill.due_date) return Number(bill.due_date.slice(8, 10));
-  return bill.due_day;
-}
 function monthLabel(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
@@ -50,17 +36,9 @@ function shiftMonth(key, delta) {
   const [y, m] = key.split("-").map(Number);
   return monthKey(new Date(y, m - 1 + delta, 1));
 }
-function daysInMonth(key) {
-  const [y, m] = key.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
-}
 function shortDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-function money(n) {
-  const v = Number(n || 0);
-  return (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function ordinal(n) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
@@ -190,31 +168,10 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
   /* ---------- load + live sync ---------- */
   const load = useCallback(async () => {
     if (credsMissing) { setLoading(false); return; }
-    try {
-      const [b, p] = await Promise.all([
-        supabase.from("bills").select("*").eq("active", true).order("due_day", { ascending: true }),
-        supabase.from("bill_payments").select("*").eq("period_key", period),
-      ]);
-      setBills(b.data || []); setPayments(p.data || []);
-    } catch (e) { console.error(e); }
-    try {
-      const [inc, spd] = await Promise.all([
-        supabase.from("income").select("*").eq("period_key", period).order("received_on", { ascending: false }),
-        supabase.from("spending").select("*").eq("period_key", period).order("spent_on", { ascending: false }),
-      ]);
-      if (inc.error || spd.error) setMoneyReady(false);
-      else { setMoneyReady(true); setIncome(inc.data || []); setSpending(spd.data || []); }
-    } catch (e) { console.error(e); setMoneyReady(false); }
-    try {
-      const [bg, gl, mv] = await Promise.all([
-        supabase.from("budgets").select("*"),
-        supabase.from("savings_goals").select("*").eq("active", true).order("created_at", { ascending: true }),
-        supabase.from("savings_moves").select("*"),
-      ]);
-      if (!bg.error) setBudgets(bg.data || []);
-      if (!gl.error) setGoals(gl.data || []);
-      if (!mv.error) setMoves(mv.data || []);
-    } catch (e) { console.error(e); }
+    const d = await fetchMonth(supabase, period);
+    setBills(d.bills); setPayments(d.payments); setMoneyReady(d.moneyReady);
+    if (d.moneyReady) { setIncome(d.income); setSpending(d.spending); }
+    setBudgets(d.budgets); setGoals(d.goals); setMoves(d.moves);
     setLoading(false);
   }, [supabase, credsMissing, period]);
 
@@ -230,12 +187,21 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
 
   /* opened from the home screen's "Log spending" shortcut */
   useEffect(() => {
-    if (startWith === "quicklog" && !loading) { openQuickLog("spend"); onStarted && onStarted(); }
+    if (!startWith || loading) return;
+    if (startWith === "quicklog") openQuickLog("spend");
+    else if (startWith.startsWith("tab:")) setTab(startWith.slice(4));
+    onStarted && onStarted();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startWith, loading]);
 
   const myId = PEOPLE.some((p) => p.id === profile?.id) ? profile.id : "adult_a";
   const defaultDate = () => (period === monthKey() ? todayIso() : `${period}-01`);
+
+  /* every number on this screen — and on the home screen's This Week card — comes from moneyMath */
+  const M = computeMonth({ bills, payments, income, spending, budgets, goals, moves }, period);
+  const { isPaid, amtFor, movedFor, savedTotal, visible, billsTotal, billsPaid, billsLeft, incomeTotal, spendTotal,
+    savingsReserved, savingsMoved, thisMonth, viewingThisMonth, dayNow, monthFrac, daysLeft,
+    budgetRows, budgetHeadroom, safeToSpend, inHand } = M;
 
   /* ================= quick log ================= */
   // most-used categories first, so the usual one is under your thumb
@@ -334,8 +300,6 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
   }
 
   /* ================= bills ================= */
-  const paidMap = {}; payments.forEach((p) => { paidMap[p.bill_id] = p; });
-  const isPaid = (b) => !!paidMap[b.id];
   const markPaid = async (bill, amt) => {
     const row = { bill_id: bill.id, period_key: period, paid: true, amount_paid: amt, paid_by: profile?.id || null };
     setPayments((p) => [...p.filter((x) => x.bill_id !== bill.id), { ...row, id: `tmp${Date.now()}` }]);
@@ -471,7 +435,6 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
     setGoals((l) => l.filter((x) => x.id !== g.id));
     try { await supabase.from("savings_goals").update({ active: false }).eq("id", g.id); } catch (e) { console.error(e); load(); }
   };
-  const movedFor = (g) => moves.find((m) => m.goal_id === g.id && m.period_key === period);
   const confirmMove = async () => {
     const amt = num(moving.value);
     if (amt == null || amt < 0) { flash("Enter an amount"); return; }
@@ -486,46 +449,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
     try { await supabase.from("savings_moves").delete().match({ goal_id: g.id, period_key: period }); } catch (e) { console.error(e); load(); }
   };
 
-  /* ================= the numbers ================= */
-  const visible = bills.filter((b) => inPeriod(b, period));
-  const amtFor = (b) => { const p = paidMap[b.id]; return p && p.amount_paid != null ? Number(p.amount_paid) : Number(b.amount || 0); };
-  const billsTotal = visible.reduce((t, b) => t + amtFor(b), 0);
-  const billsPaid = visible.filter(isPaid).reduce((t, b) => t + amtFor(b), 0);
-  const billsLeft = billsTotal - billsPaid;
-
-  const incomeTotal = income.reduce((t, r) => t + Number(r.amount || 0), 0);
-  const spendTotal = spending.reduce((t, r) => t + Number(r.amount || 0), 0);
-  const savingsReserved = goals.reduce((t, g) => { const m = movedFor(g); return t + (m ? Number(m.amount) : Number(g.monthly_amount || 0)); }, 0);
-  const savingsMoved = goals.reduce((t, g) => { const m = movedFor(g); return t + (m ? Number(m.amount) : 0); }, 0);
-  const savedTotal = (g) => Number(g.starting_amount || 0) + moves.filter((m) => m.goal_id === g.id).reduce((t, m) => t + Number(m.amount || 0), 0);
-
-  const thisMonth = monthKey(), today = new Date(), dayNow = today.getDate();
-  const viewingThisMonth = period === thisMonth;
-  const dim = daysInMonth(period);
-  const monthFrac = period < thisMonth ? 1 : period > thisMonth ? 0 : dayNow / dim;
-  const daysLeft = viewingThisMonth ? dim - dayNow + 1 : period > thisMonth ? dim : 0;
-
-  const budgetRows = budgets.filter((b) => Number(b.amount) > 0)
-    .sort((a, b) => SPEND_CATS.indexOf(a.category) - SPEND_CATS.indexOf(b.category))
-    .map((b) => {
-      const budget = Number(b.amount);
-      const spent = spending.filter((r) => r.category === b.category).reduce((t, r) => t + Number(r.amount || 0), 0);
-      const frac = spent / budget, left = budget - spent;
-      let tone, text;
-      if (left < 0) { tone = "over"; text = `Over by ${money(-left)}`; }
-      else if (monthFrac >= 1) { tone = "ok"; text = `Finished ${money(left)} under`; }
-      else if (frac > monthFrac + 0.12 && spent > 0) { tone = "warn"; text = `Ahead of pace — ${Math.round(frac * 100)}% spent, ${Math.round(monthFrac * 100)}% of the month gone`; }
-      else { tone = "ok"; text = daysLeft > 0 ? `On track · ${money(left / daysLeft)}/day for ${daysLeft} more day${daysLeft === 1 ? "" : "s"}` : `${money(left)} left`; }
-      return { category: b.category, budget, spent, frac, left, tone, text };
-    });
-  const budgetHeadroom = budgetRows.reduce((t, r) => t + Math.max(0, r.left), 0);
-
-  /* "safe to spend": what's free once bills, savings, spending so far,
-     and the rest of every budget are accounted for */
-  const afterBills = incomeTotal - billsTotal - spendTotal - savingsReserved;
-  const safeToSpend = afterBills - budgetHeadroom;
-  const inHand = incomeTotal - billsPaid - spendTotal - savingsMoved;
-
+  /* ================= derived for display ================= */
   const statusOf = (b) => {
     const d = dayOf(b);
     if (isPaid(b)) return { key: "paid", label: "Paid", color: C.green };

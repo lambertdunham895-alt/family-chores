@@ -9,6 +9,7 @@ import StellarSiegeGame from "./games/StellarSiegeGame.jsx";
 import HollowTideGame from "./games/HollowTideGame.jsx";
 import GroceryList from "./GroceryList.jsx";
 import BillTracker from "./BillTracker.jsx";
+import ThisWeek from "./ThisWeek.jsx";
 import FamilyCalendar from "./FamilyCalendar.jsx";
 
 /* ============================================================
@@ -485,6 +486,9 @@ export default function App() {
         onBills={() => setSection("bills")}
         onCalendar={() => setSection("calendar")}
         onQuickLog={() => { setMoneyStart("quicklog"); setSection("bills"); }}
+        onOpenMoney={(t) => { setMoneyStart(t ? `tab:${t}` : null); setSection("bills"); }}
+        supabase={supabase}
+        credsMissing={credsMissing}
       />
     );
   }
@@ -1550,7 +1554,7 @@ function HubIcon({ name, size = 30 }) {
 }
 
 /* ---------------- Landing hub (first screen after PIN) ---------------- */
-function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuickLog }) {
+function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuickLog, onOpenMoney, supabase, credsMissing }) {
   const [hover, setHover] = React.useState(null);
 
   const handleLock = () => {
@@ -1578,6 +1582,10 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuick
         <h1 style={S.hubTitle}>The Dunham House</h1>
         <div style={S.hubRule} />
         <p style={S.hubSub}>Welcome home. Pick what you're doing.</p>
+
+        {/* the next seven days: events, bills due, dinners, and what's safe to spend */}
+        <ThisWeek supabase={supabase} credsMissing={credsMissing}
+          onOpenCalendar={onCalendar} onOpenMoney={onOpenMoney} />
 
         <div style={S.hubGrid}>
           {TILES.map((t, i) => {
