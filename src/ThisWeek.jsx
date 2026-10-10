@@ -8,7 +8,7 @@ import { fetchMonth, computeMonth, monthKey, todayIso, daysInMonth, dayOf, money
 
 const WHO = {
   family: { name: "Family", color: "#b39ddb" }, adult_a: { name: "Dad", color: "#7ea6c9" },
-  adult_b: { name: "Mom", color: "#7fc29b" }, kid: { name: "Nolan", color: "#e0a873" },
+  adult_b: { name: "Mom", color: "#ff7eb6" }, kid: { name: "Nolan", color: "#4dd4e8" },
 };
 const C = { gold: "#d6a64e", goldHi: "#f0d49a", text: "#f0e6d2", dim: "#a5a5ae", faint: "#6e6e78",
   green: "#7fd6a0", amber: "#f2c46d", red: "#f28b82", line: "rgba(214,166,78,0.20)", lineSoft: "rgba(255,255,255,0.06)" };
