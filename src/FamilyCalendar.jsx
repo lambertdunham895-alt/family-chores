@@ -1,25 +1,25 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { fetchMonth, monthKey, inPeriod, dayOf, daysInMonth as dimOf, paydaysBetween, landedNear } from "./moneyMath.js";
 
 /* ============================================================
    FAMILY CALENDAR
-   - month grid; tap a day to see / add events
+   - month grid that shows everything at a glance: events in each person's
+     colour, bills due, and paydays — no tapping needed just to read it
+   - tap a day to add or edit
    - one dinner per day (meal planning) alongside events
    - color-coded by who it belongs to
    ============================================================ */
 
 const WHO = [
-  { id: "family",  name: "Family", color: "#7c4adb" },
-  { id: "adult_a", name: "Dad",    color: "#2c5f7c" },
-  { id: "adult_b", name: "Mom",    color: "#3d7a4e" },
-  { id: "kid",     name: "Nolan",  color: "#9c5a2c" },
+  { id: "family",  name: "Family", color: "#b39ddb" },
+  { id: "adult_a", name: "Dad",    color: "#7ea6c9" },
+  { id: "adult_b", name: "Mom",    color: "#7fc29b" },
+  { id: "kid",     name: "Nolan",  color: "#e0a873" },
 ];
 const whoOf = (id) => WHO.find((w) => w.id === id) || WHO[0];
 
 const CATS = ["School", "Sports", "Work", "Appointment", "Birthday", "Trip", "Other"];
-const CAT_ICON = {
-  School: "🎒", Sports: "⚾", Work: "💼", Appointment: "🏥",
-  Birthday: "🎂", Trip: "✈️", Other: "📌",
-};
+
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January","February","March","April","May","June",
@@ -210,6 +210,7 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
   const [selected, setSelected] = useState(ymd(today));
   const [events, setEvents] = useState([]);
   const [meals, setMeals] = useState([]);
+  const [money, setMoney] = useState({ bills: [], payments: [], income: [], paySchedules: [] });
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -250,6 +251,9 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
       const { data: ml } = await supabase.from("meals").select("*")
         .gte("day", first).lte("day", last);
       setMeals(ml || []);
+      // bills, paydays and logged paychecks for the month on screen — same source as the Money screen
+      const m = await fetchMonth(supabase, monthKey(cursor));
+      setMoney({ bills: m.bills, payments: m.payments, income: m.income, paySchedules: m.paySchedules });
     } catch (e) { console.error(e); }
     setLoading(false);
   }, [supabase, credsMissing, cursor]);
@@ -260,6 +264,10 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
     const ch = supabase.channel("cal-sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "meals" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bills" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bill_payments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "income" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pay_schedules" }, load)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [load, supabase, credsMissing]);
@@ -272,11 +280,44 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
   /* ---------- month grid ---------- */
   const y = cursor.getFullYear(), mo = cursor.getMonth();
   const firstDow = new Date(y, mo, 1).getDay();
-  const daysInMonth = new Date(y, mo + 1, 0).getDate();
+  const monthDays = new Date(y, mo + 1, 0).getDate();
   const cells = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(y, mo, d));
+  for (let d = 1; d <= monthDays; d++) cells.push(new Date(y, mo, d));
   while (cells.length % 7 !== 0) cells.push(null);
+
+  const period = monthKey(cursor);
+  const paidMap = {}; money.payments.forEach((p) => { paidMap[p.bill_id] = p; });
+  const monthStart = `${period}-01`, monthEnd = `${period}-${String(monthDays).padStart(2, "0")}`;
+  const expected = paydaysBetween(money.paySchedules, monthStart, monthEnd);
+  const todayKey = ymd(today);
+
+  const short$ = (n) => { const v = Number(n || 0);
+    return "$" + v.toLocaleString(undefined, { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }); };
+
+  function moneyOn(key) {
+    const out = [];
+    // paydays: scheduled ones, showing the real amount once it's been logged
+    const used = new Set();
+    for (const p of expected.filter((x) => x.date === key)) {
+      const landed = landedNear(money.income, p.who, key);
+      if (landed) used.add(landed.id);
+      out.push({ kind: "pay", who: p.who, landed });
+    }
+    // a paycheck logged on a day with no scheduled payday (a bonus, an odd week) still shows
+    for (const r of money.income.filter((r) => r.received_on === key)) {
+      const near = expected.some((p) => p.who === r.who && landedNear([r], p.who, p.date));
+      if (!near && !used.has(r.id)) out.push({ kind: "pay", who: r.who, landed: r });
+    }
+    // bills due that day; a 31st bill falls on the last day of a short month
+    for (const b of money.bills.filter((b) => inPeriod(b, period))) {
+      if (Math.min(dayOf(b), monthDays) !== Number(key.slice(8, 10))) continue;
+      const paid = !!paidMap[b.id];
+      const amt = paid && paidMap[b.id].amount_paid != null ? paidMap[b.id].amount_paid : b.amount;
+      out.push({ kind: "bill", bill: b, paid, amt, late: !paid && key < todayKey });
+    }
+    return out;
+  }
 
   const evOn = (key) => events.filter((e) => e.day === key);
   const mealOn = (key) => meals.find((m) => m.day === key);
@@ -472,442 +513,373 @@ export default function FamilyCalendar({ supabase, profile, onBack, credsMissing
 
   const selDate = fromYmd(selected);
   const isToday = sameDay(selDate, today);
+  const selMoney = moneyOn(selected);
+  const MAXTAGS = 4;
 
   if (loading) {
-    return (
-      <div style={S.center}>
-        <div style={{ fontSize: 40 }}>📅</div>
-        <div style={{ color: "#6b7c8c", marginTop: 12 }}>Loading the calendar…</div>
-      </div>
-    );
+    return <div style={S.screen}><div style={S.center}><div style={{ color: P.dim }}>Loading the calendar…</div></div></div>;
   }
 
+  /* one line of text inside a day: wraps to two lines, then cuts off — like a phone's own calendar */
+  // padding lives on the outer box and the two-line cutoff on the inner text,
+  // so no sliver of a third line can show through the bottom padding
+  const Tag = ({ text, color, bg, bar, strike, title }) => (
+    <span title={title || text} style={{ ...S.tag, color, background: bg, borderLeft: bar ? `3px solid ${bar}` : "none" }}>
+      <span style={{ ...S.tagText, textDecoration: strike ? "line-through" : "none" }}>{text}</span>
+    </span>
+  );
+  const tagsFor = (key) => {
+    const t = [];
+    for (const m of moneyOn(key)) {
+      if (m.kind === "pay") t.push({ k: "p" + m.who, text: m.landed ? `${whoOf(m.who).name} +${short$(m.landed.amount)}` : `${whoOf(m.who).name} payday`,
+        color: P.green, bg: "rgba(127,214,160,0.13)" });
+      else t.push({ k: "b" + m.bill.id, text: `${m.bill.name} ${short$(m.amt)}`,
+        color: m.paid ? P.faint : m.late ? P.red : P.amber,
+        bg: m.paid ? "rgba(255,255,255,0.04)" : m.late ? "rgba(242,139,130,0.13)" : "rgba(242,196,109,0.12)", strike: m.paid });
+    }
+    for (const e of evOn(key).sort((a, b) => (a.start_time || "").localeCompare(b.start_time || "")))
+      t.push({ k: "e" + e.id, text: e.title, color: P.text, bg: "rgba(255,255,255,0.05)", bar: whoOf(e.who).color });
+    return t;
+  };
+
   return (
-    <div style={S.app}>
-      <div style={S.topbar}>
-        <button style={S.backBtn} onClick={onBack}>← Home</button>
-        <h2 style={S.title}>📅 Calendar</h2>
-        <div style={{ width: 70 }} />
-      </div>
-
-      {credsMissing && (
-        <div style={S.banner}>⚠️ Supabase isn't configured — changes won't sync.</div>
-      )}
-
-      {/* ---- month switcher ---- */}
-      <div style={S.monthBar}>
-        <button style={S.navBtn} onClick={() => setCursor(addMonths(cursor, -1))}>‹</button>
-        <div style={{ textAlign: "center" }}>
-          <div style={S.monthName}>{MONTHS[mo]} {y}</div>
-          <button style={S.todayBtn} onClick={() => {
-            const t = new Date();
-            setCursor(new Date(t.getFullYear(), t.getMonth(), 1));
-            setSelected(ymd(t));
-          }}>jump to today</button>
+    <div style={S.screen}>
+      <div style={S.wrap}>
+        <div style={S.topbar}>
+          <button style={S.backBtn} onClick={onBack}><Glyph name="back" size={16} /><span>Home</span></button>
+          <h2 style={S.title}>Calendar</h2>
+          <div style={{ width: 78 }} />
         </div>
-        <button style={S.navBtn} onClick={() => setCursor(addMonths(cursor, 1))}>›</button>
-      </div>
 
-      {/* ---- grid ---- */}
-      <div style={S.dowRow}>
-        {DOW.map((d) => <div key={d} style={S.dowCell}>{d}</div>)}
-      </div>
-      <div style={S.grid}>
-        {cells.map((d, i) => {
-          if (!d) return <div key={i} style={S.emptyCell} />;
-          const key = ymd(d);
-          const evs = evOn(key);
-          const ml = mealOn(key);
-          const isSel = key === selected;
-          const isTod = sameDay(d, today);
-          return (
-            <button
-              key={i}
-              style={{
-                ...S.cell,
-                ...(isSel ? S.cellSel : {}),
-                ...(isTod && !isSel ? S.cellToday : {}),
-              }}
-              onClick={() => { setSelected(key); setEditing(null); }}
-            >
-              <span style={{
-                ...S.cellNum,
-                ...(isSel ? { color: "#fff" } : {}),
-                ...(isTod && !isSel ? { color: "#c0392b", fontWeight: 800 } : {}),
-              }}>{d.getDate()}</span>
-              <span style={S.dots}>
-                {evs.slice(0, 3).map((e) => (
-                  <span key={e.id} style={{ ...S.dot, background: whoOf(e.who).color }} />
-                ))}
-                {evs.length > 3 && <span style={{ ...S.dot, background: "#9aa8b5" }} />}
-              </span>
-              {ml && <span style={S.mealDot}>🍽</span>}
-            </button>
-          );
-        })}
-      </div>
+        {credsMissing && <div style={S.banner}>Supabase isn't configured — changes won't sync.</div>}
 
-      {/* ---- legend ---- */}
-      <div style={S.legend}>
-        {WHO.map((w) => (
-          <span key={w.id} style={S.legendItem}>
-            <span style={{ ...S.dot, background: w.color }} /> {w.name}
-          </span>
-        ))}
-      </div>
-
-      {/* ---- selected day ---- */}
-      <div style={S.dayHead}>
-        <div>
-          <div style={S.dayTitle}>
-            {DOW[selDate.getDay()]}, {MONTHS[selDate.getMonth()]} {selDate.getDate()}
-          </div>
-          {isToday && <span style={S.todayTag}>TODAY</span>}
-        </div>
-        {!editing && !drafts && (
-          <div style={{ display: "flex", gap: 8 }}>
-            {pushState !== "unsupported" && (
-              <button
-                style={{ ...S.bellBtn, ...(pushState === "on" ? S.bellOn : {}),
-                         ...(pushBusy ? { opacity: 0.5 } : {}) }}
-                disabled={pushBusy}
-                title={pushState === "on" ? "Notifications on for this device"
-                       : pushState === "blocked" ? "Notifications blocked in browser settings"
-                       : "Turn on notifications for this device"}
-                onClick={togglePush}
-              >
-                <BellIcon size={16} color={pushState === "on" ? "#fff" : "#6b7c8c"}
-                          off={pushState !== "on"} />
-              </button>
+        <div style={S.monthBar}>
+          <button style={S.navBtn} aria-label="Previous month" onClick={() => setCursor(addMonths(cursor, -1))}><Glyph name="left" size={18} /></button>
+          <div style={{ textAlign: "center" }}>
+            <div style={S.monthName}>{MONTHS[mo]} {y}</div>
+            {(mo !== today.getMonth() || y !== today.getFullYear() || selected !== todayKey) && (
+              <button style={S.todayBtn} onClick={() => {
+                const t = new Date(); setCursor(new Date(t.getFullYear(), t.getMonth(), 1)); setSelected(ymd(t));
+              }}>jump to today</button>
             )}
-            <button
-              style={{ ...S.scanBtn, ...(scanning ? { opacity: 0.6 } : {}) }}
-              disabled={scanning}
-              onClick={() => fileRef.current && fileRef.current.click()}
-            >
-              <ScanIcon size={15} color="#2c5f7c" />
-              <span>{scanning ? "Reading…" : "Scan"}</span>
-            </button>
-            <button style={S.addBtn} onClick={startNew}>+ Add</button>
           </div>
-        )}
+          <button style={S.navBtn} aria-label="Next month" onClick={() => setCursor(addMonths(cursor, 1))}><Glyph name="right" size={18} /></button>
+        </div>
       </div>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        onChange={onPickPhoto}
-        style={{ display: "none" }}
-      />
-
-      {scanning && (
-        <div style={S.scanNote}>
-          Reading the photo… this takes a few seconds.
-        </div>
-      )}
-
-      {scanError && !scanning && (
-        <div style={S.errNote}>
-          <span style={{ flex: 1 }}>{scanError}</span>
-          <button style={S.iconBtn} onClick={() => setScanError(null)}>✕</button>
-        </div>
-      )}
-
-      {/* ---- scan review ---- */}
-      {drafts && (
-        <div style={S.reviewCard}>
-          <div style={{ fontWeight: 800, marginBottom: 4, color: "#2c5f7c" }}>
-            Found {drafts.length} event{drafts.length === 1 ? "" : "s"}
-          </div>
-          <div style={{ fontSize: 12, color: "#6b7c8c", marginBottom: 12 }}>
-            Check the dates and times before saving. Uncheck anything you don't want.
-          </div>
-
-          {drafts.map((d) => {
-            const w = whoOf(d.who);
-            const low = d.confidence < 0.6;
+      {/* ---- the month, everything written in ---- */}
+      <div style={S.gridWrap}>
+        <div style={S.dowRow}>{DOW.map((d) => <div key={d} style={S.dowCell}>{d[0]}</div>)}</div>
+        <div style={S.grid}>
+          {cells.map((d, i) => {
+            if (!d) return <div key={i} style={S.emptyCell} />;
+            const key = ymd(d), tags = tagsFor(key), ml = mealOn(key);
+            const isSel = key === selected, isTod = key === todayKey, past = key < todayKey;
             return (
-              <div key={d._id} style={{
-                ...S.draftRow,
-                borderLeft: `5px solid ${d.include ? w.color : "#dce5ec"}`,
-                opacity: d.include ? 1 : 0.5,
-              }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={d.include}
-                    onChange={(e) => patchDraft(d._id, { include: e.target.checked })}
-                    style={{ marginTop: 4, width: 18, height: 18, flexShrink: 0 }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <input
-                      style={{ ...S.input, fontWeight: 600, padding: "8px 9px" }}
-                      value={d.title}
-                      onChange={(e) => patchDraft(d._id, { title: e.target.value })}
-                    />
-
-                    {low && (
-                      <div style={S.lowConf}>Not fully sure about this one — double-check it</div>
-                    )}
-
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <div style={{ flex: 1.3 }}>
-                        <label style={S.miniLabel}>Date</label>
-                        <input
-                          style={{ ...S.input, padding: "8px 9px", fontSize: 14 }}
-                          type="date"
-                          value={d.day}
-                          onChange={(e) => patchDraft(d._id, { day: e.target.value })}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <label style={S.miniLabel}>Time</label>
-                        {d.allDay ? (
-                          <button
-                            style={{ ...S.input, padding: "8px 9px", fontSize: 13.5,
-                              textAlign: "left", background: "#fff", cursor: "pointer", color: "#6b7c8c" }}
-                            onClick={() => patchDraft(d._id, { allDay: false })}
-                          >All day</button>
-                        ) : (
-                          <input
-                            style={{ ...S.input, padding: "8px 9px", fontSize: 14 }}
-                            type="time"
-                            value={d.start_time}
-                            onChange={(e) => patchDraft(d._id, { start_time: e.target.value })}
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ ...S.chipRow, marginTop: 8 }}>
-                      {WHO.map((ww) => (
-                        <button key={ww.id}
-                          style={{ ...S.chipSm, ...(d.who === ww.id
-                            ? { background: ww.color, color: "#fff", borderColor: ww.color } : {}) }}
-                          onClick={() => patchDraft(d._id, { who: ww.id })}
-                        >{ww.name}</button>
-                      ))}
-                    </div>
-
-                    {d.location && (
-                      <div style={{ fontSize: 11.5, color: "#6b7c8c", marginTop: 6 }}>
-                        📍 {d.location}
-                      </div>
-                    )}
-                  </div>
+              <button key={i} style={{ ...S.cell, ...(isSel ? S.cellSel : {}), ...(past && !isSel ? { opacity: 0.62 } : {}) }}
+                onClick={() => { setSelected(key); setEditing(null); }}>
+                <div style={S.cellTop}>
+                  <span style={{ ...S.cellNum, ...(isTod ? S.cellNumToday : {}) }}>{d.getDate()}</span>
+                  {ml && <span style={S.mealMark} title={`Dinner: ${ml.dinner}`}><Glyph name="dinner" size={11} color={P.dim} /></span>}
                 </div>
-              </div>
+                {tags.slice(0, MAXTAGS).map((t) => <Tag key={t.k} {...t} />)}
+                {tags.length > MAXTAGS && <span style={S.moreTag}>+{tags.length - MAXTAGS} more</span>}
+              </button>
             );
           })}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button style={S.saveBtn} disabled={saving} onClick={saveDrafts}>
-              {saving ? "Saving…" : `Add ${drafts.filter((d) => d.include).length} to calendar`}
-            </button>
-            <button style={S.cancelBtn} onClick={() => setDrafts(null)}>Discard</button>
-          </div>
         </div>
-      )}
-
-      {/* ---- dinner ---- */}
-      <div style={S.mealCard}>
-        <span style={{ fontSize: 18 }}>🍽</span>
-        <input
-          style={S.mealInput}
-          value={mealText}
-          onChange={(e) => setMealText(e.target.value)}
-          onBlur={saveMeal}
-          onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-          placeholder="What's for dinner?"
-        />
       </div>
 
-      {/* ---- event editor ---- */}
-      {editing && (
-        <div style={S.editCard}>
-          <div style={{ fontWeight: 700, marginBottom: 10 }}>
-            {editing.id ? "Edit event" : "New event"}
-          </div>
-          <label style={S.label}>What is it?</label>
-          <input style={S.input} value={title} onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g., Baseball practice" />
+      <div style={S.wrap}>
+        <div style={S.legend}>
+          {WHO.map((w) => <span key={w.id} style={S.legendItem}><span style={{ ...S.dot, background: w.color }} />{w.name}</span>)}
+          <span style={S.legendItem}><span style={{ ...S.dot, background: P.green }} />Payday</span>
+          <span style={S.legendItem}><span style={{ ...S.dot, background: P.amber }} />Bill</span>
+        </div>
 
-          <label style={S.label}>Who</label>
-          <div style={S.chipRow}>
-            {WHO.map((w) => (
-              <button key={w.id}
-                style={{ ...S.chip, ...(who === w.id ? { background: w.color, color: "#fff", borderColor: w.color } : {}) }}
-                onClick={() => setWho(w.id)}>{w.name}</button>
-            ))}
-          </div>
-
-          <label style={S.label}>Type</label>
-          <div style={S.chipRow}>
-            {CATS.map((c) => (
-              <button key={c}
-                style={{ ...S.chip, ...(cat === c ? S.chipOn : {}) }}
-                onClick={() => setCat(c)}>{CAT_ICON[c]} {c}</button>
-            ))}
-          </div>
-
-          <label style={{ ...S.label, display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
-            <span>All day</span>
-          </label>
-
-          {!allDay && (
-            <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>Starts</label>
-                <input style={S.input} type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+        {/* ---- the chosen day ---- */}
+        <div style={S.dayCard}>
+          <div style={S.dayHead}>
+            <div>
+              <div style={S.dayTitle}>{DOW[selDate.getDay()]}, {MONTHS[selDate.getMonth()]} {selDate.getDate()}</div>
+              {isToday && <span style={S.todayTag}>Today</span>}
+            </div>
+            {!editing && !drafts && (
+              <div style={{ display: "flex", gap: 8 }}>
+                {pushState !== "unsupported" && (
+                  <button style={{ ...S.iconSq, ...(pushState === "on" ? S.iconSqOn : {}), ...(pushBusy ? { opacity: 0.5 } : {}) }}
+                    disabled={pushBusy} onClick={togglePush}
+                    aria-label={pushState === "on" ? "Notifications on" : "Turn on notifications"}
+                    title={pushState === "on" ? "Notifications on for this device" : pushState === "blocked" ? "Notifications blocked in browser settings" : "Turn on notifications for this device"}>
+                    <BellIcon size={17} color={pushState === "on" ? "#0b0b0d" : P.dim} off={pushState !== "on"} />
+                  </button>
+                )}
+                <button style={{ ...S.iconSq, ...(scanning ? { opacity: 0.6 } : {}) }} disabled={scanning} aria-label="Scan a schedule"
+                  onClick={() => fileRef.current && fileRef.current.click()}><ScanIcon size={17} color={P.gold} /></button>
+                <button style={S.addBtn} onClick={startNew}><Glyph name="plus" size={16} color="#1a140a" /><span>Add</span></button>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>Ends (optional)</label>
-                <input style={S.input} type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+            )}
+          </div>
+
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPickPhoto} style={{ display: "none" }} />
+          {scanning && <div style={S.noteInfo}>Reading the photo… this takes a few seconds.</div>}
+          {scanError && !scanning && (
+            <div style={S.noteErr}><span style={{ flex: 1 }}>{scanError}</span>
+              <button style={S.xBtn} aria-label="Dismiss" onClick={() => setScanError(null)}><Glyph name="close" size={15} /></button></div>
+          )}
+
+          {/* money on this day */}
+          {selMoney.length > 0 && !drafts && (
+            <div style={{ marginTop: 6 }}>
+              {selMoney.map((m) => m.kind === "pay" ? (
+                <div key={"p" + m.who + (m.landed ? m.landed.id : "")} style={S.moneyRow}>
+                  <Glyph name="wallet" size={16} color={P.green} />
+                  <span style={{ flex: 1 }}>{whoOf(m.who).name} {m.landed ? "paid" : "payday"}</span>
+                  {m.landed ? <b style={{ color: P.green }}>+{short$(m.landed.amount)}</b> : <span style={{ color: P.faint, fontSize: 12.5 }}>log it in Money</span>}
+                </div>
+              ) : (
+                <div key={"b" + m.bill.id} style={S.moneyRow}>
+                  <Glyph name="bill" size={16} color={m.paid ? P.faint : m.late ? P.red : P.amber} />
+                  <span style={{ flex: 1, textDecoration: m.paid ? "line-through" : "none", color: m.paid ? P.faint : P.text }}>{m.bill.name}</span>
+                  <span style={{ color: m.paid ? P.green : m.late ? P.red : P.amber, fontSize: 12.5, fontWeight: 700, marginRight: 8 }}>
+                    {m.paid ? "Paid" : m.late ? "Overdue" : "Due"}</span>
+                  <b>{short$(m.amt)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* scan review */}
+          {drafts && (
+            <div style={S.review}>
+              <div style={{ fontWeight: 800, color: P.goldHi }}>Found {drafts.length} event{drafts.length === 1 ? "" : "s"}</div>
+              <div style={{ fontSize: 12.5, color: P.dim, margin: "2px 0 12px" }}>Check the dates and times before saving. Untick anything you don't want.</div>
+              {drafts.map((d) => {
+                const w = whoOf(d.who), low = d.confidence < 0.6;
+                return (
+                  <div key={d._id} style={{ ...S.draft, borderLeft: `4px solid ${d.include ? w.color : "rgba(255,255,255,0.12)"}`, opacity: d.include ? 1 : 0.5 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <input type="checkbox" checked={d.include} onChange={(e) => patchDraft(d._id, { include: e.target.checked })}
+                        style={{ marginTop: 12, width: 20, height: 20, flexShrink: 0, accentColor: P.gold }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <input style={{ ...S.input, fontWeight: 700 }} value={d.title} onChange={(e) => patchDraft(d._id, { title: e.target.value })} />
+                        {low && <div style={S.lowConf}>Not fully sure about this one — double-check it</div>}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <div style={{ flex: 1.3 }}><label style={S.miniLabel}>Date</label>
+                            <input style={S.input} type="date" value={d.day} onChange={(e) => patchDraft(d._id, { day: e.target.value })} /></div>
+                          <div style={{ flex: 1 }}><label style={S.miniLabel}>Time</label>
+                            {d.allDay ? (
+                              <button style={{ ...S.input, textAlign: "left", cursor: "pointer", color: P.dim }} onClick={() => patchDraft(d._id, { allDay: false })}>All day</button>
+                            ) : (
+                              <input style={S.input} type="time" value={d.start_time} onChange={(e) => patchDraft(d._id, { start_time: e.target.value })} />
+                            )}</div>
+                        </div>
+                        <div style={{ ...S.chips, marginTop: 8 }}>
+                          {WHO.map((ww) => (
+                            <button key={ww.id} style={{ ...S.chip, ...(d.who === ww.id ? { background: ww.color, color: "#0b0b0d", borderColor: ww.color } : {}) }}
+                              onClick={() => patchDraft(d._id, { who: ww.id })}>{ww.name}</button>
+                          ))}
+                        </div>
+                        {d.location && <div style={{ fontSize: 12, color: P.dim, marginTop: 6 }}>{d.location}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={S.btnRow}>
+                <button style={S.primary} disabled={saving} onClick={saveDrafts}>{saving ? "Saving…" : `Add ${drafts.filter((d) => d.include).length} to calendar`}</button>
+                <button style={S.secondary} onClick={() => setDrafts(null)}>Discard</button>
               </div>
             </div>
           )}
 
-          <label style={S.label}>Where (optional)</label>
-          <input style={S.input} value={loc} onChange={(e) => setLoc(e.target.value)}
-            placeholder="e.g., Laurel Park field 3" />
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button style={S.saveBtn} onClick={saveEvent}>Save</button>
-            <button style={S.cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* ---- event list ---- */}
-      {drafts ? null : dayEvents.length === 0 && !editing ? (
-        <div style={S.empty}>
-          <div style={{ fontSize: 34 }}>🗓</div>
-          <p style={{ color: "#6b7c8c", marginTop: 6, fontSize: 13.5 }}>
-            Nothing scheduled. Tap "+ Add" to put something on the calendar.
-          </p>
-        </div>
-      ) : (
-        dayEvents.map((e) => {
-          const w = whoOf(e.who);
-          return (
-            <div key={e.id} style={{ ...S.evRow, borderLeft: `5px solid ${w.color}` }}>
-              <div style={{ flex: 1 }}>
-                <div style={S.evTitle}>{CAT_ICON[e.category] || "📌"} {e.title}</div>
-                <div style={S.evMeta}>
-                  <span style={{ color: w.color, fontWeight: 700 }}>{w.name}</span>
-                  <span>· {e.start_time ? prettyTime(e.start_time) : "All day"}</span>
-                  {e.end_time && <span>– {prettyTime(e.end_time)}</span>}
-                  {e.location && <span>· {e.location}</span>}
-                </div>
-              </div>
-              <button style={S.iconBtn} onClick={() => startEdit(e)}>✎</button>
-              <button style={{ ...S.iconBtn, color: "#c0392b" }} onClick={() => removeEvent(e)}>✕</button>
+          {/* dinner */}
+          {!drafts && (
+            <div style={S.meal}>
+              <Glyph name="dinner" size={17} color={P.gold} />
+              <input style={S.mealInput} value={mealText} onChange={(e) => setMealText(e.target.value)} onBlur={saveMeal}
+                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }} placeholder="What's for dinner?" />
             </div>
-          );
-        })
-      )}
+          )}
 
+          {/* event editor */}
+          {editing && (
+            <div style={S.editor}>
+              <div style={{ fontWeight: 800, fontSize: 15.5 }}>{editing.id ? "Edit event" : "New event"}</div>
+              <label style={S.label}>What is it?</label>
+              <input style={S.input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Baseball practice" />
+              <label style={S.label}>Who</label>
+              <div style={S.chips}>
+                {WHO.map((w) => (
+                  <button key={w.id} style={{ ...S.chip, ...(who === w.id ? { background: w.color, color: "#0b0b0d", borderColor: w.color } : {}) }}
+                    onClick={() => setWho(w.id)}>{w.name}</button>
+                ))}
+              </div>
+              <label style={S.label}>Type</label>
+              <div style={S.chips}>
+                {CATS.map((c) => (
+                  <button key={c} style={{ ...S.chip, ...(cat === c ? S.chipOn : {}) }} onClick={() => setCat(c)}>{c}</button>
+                ))}
+              </div>
+              <label style={S.toggle}><input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} style={{ accentColor: P.gold }} /><span>All day</span></label>
+              {!allDay && (
+                <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ flex: 1 }}><label style={S.label}>Starts</label>
+                    <input style={S.input} type="time" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+                  <div style={{ flex: 1 }}><label style={S.label}>Ends (optional)</label>
+                    <input style={S.input} type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+                </div>
+              )}
+              <label style={S.label}>Where (optional)</label>
+              <input style={S.input} value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="e.g. Laurel Park field 3" />
+              <div style={S.btnRow}>
+                <button style={S.primary} onClick={saveEvent}>Save</button>
+                <button style={S.secondary} onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* events on this day */}
+          {!drafts && !editing && (dayEvents.length === 0 ? (
+            selMoney.length === 0 && <div style={S.empty}>Nothing scheduled. Tap Add to put something on the calendar.</div>
+          ) : dayEvents.map((e) => {
+            const w = whoOf(e.who);
+            return (
+              <div key={e.id} style={{ ...S.evRow, borderLeft: `4px solid ${w.color}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={S.evTitle}>{e.title}</div>
+                  <div style={S.evMeta}>
+                    <span style={{ color: w.color, fontWeight: 700 }}>{w.name}</span>
+                    <span>· {e.start_time ? prettyTime(e.start_time) : "All day"}{e.end_time ? ` – ${prettyTime(e.end_time)}` : ""}</span>
+                    {e.category && e.category !== "Other" && <span>· {e.category}</span>}
+                    {e.location && <span>· {e.location}</span>}
+                  </div>
+                </div>
+                <button style={S.xBtn} aria-label="Edit event" onClick={() => startEdit(e)}><Glyph name="edit" size={17} /></button>
+                <button style={{ ...S.xBtn, color: P.red }} aria-label="Delete event" onClick={() => removeEvent(e)}><Glyph name="trash" size={17} /></button>
+              </div>
+            );
+          }))}
+        </div>
+        <div style={{ height: 40 }} />
+      </div>
       {toast && <div style={S.toast}>{toast}</div>}
-      <div style={{ height: 40 }} />
     </div>
   );
 }
 
+/* ---- stroke icons, matching the home and Money screens ---- */
+const GLYPHS = {
+  back: <path d="M15 6l-6 6 6 6" />, left: <path d="M15 6l-6 6 6 6" />, right: <path d="M9 6l6 6-6 6" />,
+  plus: <path d="M12 5v14M5 12h14" />, close: <path d="M6 6l12 12M18 6L6 18" />,
+  edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M14 6l4 4" /></>,
+  trash: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>,
+  dinner: <><path d="M4 3v8a2 2 0 0 0 2 2h1v8M7 3v6M10 3v8" /><path d="M18 21V3c-2 1.5-3 4-3 7v4h3" /></>,
+  wallet: <><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" /><path d="M21 11h-4a2 2 0 0 0 0 4h4z" /></>,
+  bill: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
+};
+function Glyph({ name, size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" style={{ display: "block", flexShrink: 0 }}>{GLYPHS[name]}</svg>
+  );
+}
+
+const P = { bg: "#0b0b0d", card: "#141418", card2: "#1b1b21", gold: "#d6a64e", goldHi: "#f0d49a", text: "#f0e6d2",
+  dim: "#a5a5ae", faint: "#6e6e78", green: "#7fd6a0", amber: "#f2c46d", red: "#f28b82",
+  line: "rgba(214,166,78,0.18)", lineSoft: "rgba(255,255,255,0.06)" };
+const font = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+
 const S = {
-  app: { maxWidth: 560, margin: "0 auto", padding: "0 14px 40px",
-    fontFamily: "'Segoe UI', system-ui, sans-serif", color: "#1a2b3c" },
-  center: { height: "100vh", display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center", fontFamily: "system-ui" },
-  topbar: { display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "16px 0", borderBottom: "2px solid #e3ebf0", marginBottom: 12 },
-  title: { color: "#7c4adb", fontSize: 19, margin: 0, fontWeight: 800 },
-  backBtn: { background: "none", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "6px 12px", color: "#2c5f7c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
-  banner: { background: "#fff4e0", border: "1.5px solid #f0c97a", borderRadius: 10,
-    padding: "10px 12px", fontSize: 12.5, color: "#8a5a1a", marginBottom: 12 },
-  monthBar: { display: "flex", alignItems: "center", justifyContent: "space-between",
-    marginBottom: 10 },
-  navBtn: { background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 8,
-    width: 40, height: 36, fontSize: 20, color: "#2c5f7c", cursor: "pointer", lineHeight: 1 },
-  monthName: { fontWeight: 800, color: "#2c5f7c", fontSize: 17 },
-  todayBtn: { background: "none", border: "none", color: "#3a7bd5", fontSize: 11.5,
-    cursor: "pointer", textDecoration: "underline", padding: 2 },
-  dowRow: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 4 },
-  dowCell: { textAlign: "center", fontSize: 11, fontWeight: 700, color: "#9aa8b5",
-    textTransform: "uppercase", letterSpacing: 0.4 },
-  grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 },
-  emptyCell: { aspectRatio: "1 / 1" },
-  cell: { aspectRatio: "1 / 1", background: "#fff", border: "1.5px solid #e3ebf0",
-    borderRadius: 9, display: "flex", flexDirection: "column", alignItems: "center",
-    justifyContent: "flex-start", padding: "4px 2px", cursor: "pointer",
-    position: "relative", overflow: "hidden" },
-  cellSel: { background: "#2c5f7c", borderColor: "#2c5f7c" },
-  cellToday: { borderColor: "#c0392b", borderWidth: 2 },
-  cellNum: { fontSize: 13, fontWeight: 600, color: "#1a2b3c", lineHeight: 1.2 },
-  dots: { display: "flex", gap: 2, marginTop: 3, flexWrap: "wrap", justifyContent: "center" },
-  dot: { width: 6, height: 6, borderRadius: "50%", display: "inline-block" },
-  mealDot: { position: "absolute", bottom: 2, fontSize: 8, opacity: 0.8 },
-  legend: { display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap",
-    margin: "10px 0 14px", fontSize: 11.5, color: "#5a6b7a" },
-  legendItem: { display: "flex", alignItems: "center", gap: 4 },
-  dayHead: { display: "flex", justifyContent: "space-between", alignItems: "center",
-    borderTop: "2px solid #e3ebf0", paddingTop: 12, marginBottom: 10 },
-  dayTitle: { fontWeight: 800, fontSize: 16, color: "#2c5f7c" },
-  todayTag: { fontSize: 9.5, fontWeight: 800, color: "#c0392b", background: "#fdeceb",
-    padding: "2px 7px", borderRadius: 6, letterSpacing: 0.5 },
-  addBtn: { background: "#7c4adb", color: "#fff", border: "none", borderRadius: 8,
-    padding: "8px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
-  mealCard: { display: "flex", alignItems: "center", gap: 10, background: "#fffdf5",
-    border: "1.5px solid #f0d9a0", borderRadius: 10, padding: "8px 12px", marginBottom: 12 },
-  mealInput: { flex: 1, border: "none", background: "transparent", fontSize: 14.5,
-    outline: "none", color: "#1a2b3c" },
-  editCard: { background: "#f8fbfd", border: "1.5px solid #c5d4de", borderRadius: 12,
-    padding: 14, marginBottom: 14 },
-  label: { display: "block", fontSize: 12, fontWeight: 600, color: "#6b7c8c",
-    marginTop: 10, marginBottom: 4 },
-  input: { width: "100%", padding: "10px", border: "1.5px solid #c5d4de",
-    borderRadius: 8, fontSize: 15, boxSizing: "border-box" },
-  chipRow: { display: "flex", gap: 5, flexWrap: "wrap" },
-  chip: { padding: "6px 11px", borderRadius: 20, border: "1.5px solid #dce5ec",
-    background: "#fff", color: "#5a6b7a", fontWeight: 600, fontSize: 12, cursor: "pointer" },
-  chipOn: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
-  saveBtn: { flex: 1, background: "#2c5f7c", color: "#fff", border: "none",
-    borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: "pointer" },
-  cancelBtn: { flex: 1, background: "#fff", color: "#6b7c8c", border: "1.5px solid #c5d4de",
-    borderRadius: 8, padding: "11px 0", fontWeight: 600, cursor: "pointer" },
-  evRow: { display: "flex", alignItems: "center", gap: 8, background: "#fff",
-    border: "1.5px solid #e3ebf0", borderRadius: 10, padding: "10px 10px", marginBottom: 8 },
-  evTitle: { fontSize: 15, fontWeight: 600 },
-  evMeta: { fontSize: 11.5, color: "#6b7c8c", marginTop: 3,
-    display: "flex", gap: 4, flexWrap: "wrap" },
-  iconBtn: { background: "none", border: "none", fontSize: 14, cursor: "pointer",
-    padding: "4px 5px", opacity: 0.6 },
-  empty: { textAlign: "center", padding: "30px 20px" },
-  bellBtn: { display: "flex", alignItems: "center", justifyContent: "center",
-    background: "#fff", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "8px 10px", cursor: "pointer" },
-  bellOn: { background: "#2c5f7c", borderColor: "#2c5f7c" },
-  scanBtn: { display: "flex", alignItems: "center", gap: 6, background: "#fff",
-    color: "#2c5f7c", border: "1.5px solid #c5d4de", borderRadius: 8,
-    padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontSize: 13.5 },
-  scanNote: { background: "#eef6fb", border: "1.5px solid #bcd9ea", borderRadius: 10,
-    padding: "10px 12px", fontSize: 13, color: "#2c5f7c", marginBottom: 12, fontWeight: 600 },
-  errNote: { display: "flex", alignItems: "center", gap: 8, background: "#fdeceb",
-    border: "1.5px solid #f0b4ae", borderRadius: 10, padding: "10px 12px",
-    fontSize: 12.5, color: "#a03027", marginBottom: 12 },
-  reviewCard: { background: "#f8fbfd", border: "1.5px solid #c5d4de", borderRadius: 12,
-    padding: 14, marginBottom: 14 },
-  draftRow: { background: "#fff", border: "1.5px solid #e3ebf0", borderRadius: 10,
-    padding: "10px 10px", marginBottom: 10 },
-  miniLabel: { display: "block", fontSize: 10.5, fontWeight: 700, color: "#9aa8b5",
-    textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 },
-  chipSm: { padding: "5px 10px", borderRadius: 20, border: "1.5px solid #dce5ec",
-    background: "#fff", color: "#5a6b7a", fontWeight: 600, fontSize: 11.5, cursor: "pointer" },
-  lowConf: { fontSize: 11, color: "#a06a10", background: "#fff6e3",
-    border: "1px solid #f0d9a0", borderRadius: 6, padding: "4px 7px", marginTop: 6 },
-  toast: { position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-    background: "#1a2b3c", color: "#fff", padding: "11px 20px", borderRadius: 30,
-    fontWeight: 600, boxShadow: "0 4px 16px rgba(0,0,0,0.2)", zIndex: 100, fontSize: 14 },
+  screen: { minHeight: "100vh", width: "100%", background: `radial-gradient(120% 50% at 50% -10%, #17181c 0%, ${P.bg} 55%)`,
+    color: P.text, fontFamily: font, WebkitTapHighlightColor: "transparent" },
+  wrap: { maxWidth: 560, margin: "0 auto", padding: "0 14px" },
+  center: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
+  topbar: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 6px" },
+  backBtn: { display: "inline-flex", alignItems: "center", gap: 4, width: 78, background: "transparent", color: P.dim,
+    border: `1px solid ${P.lineSoft}`, borderRadius: 999, padding: "8px 14px 8px 10px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
+  title: { margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 26, fontWeight: 700, letterSpacing: 1,
+    background: "linear-gradient(180deg,#f4dfae 0%,#d6a64e 55%,#a97c2e 100%)", WebkitBackgroundClip: "text",
+    backgroundClip: "text", WebkitTextFillColor: "transparent", color: P.gold },
+  banner: { background: "rgba(242,196,109,0.1)", border: "1px solid rgba(242,196,109,0.3)", color: P.amber,
+    borderRadius: 12, padding: "10px 12px", fontSize: 13, marginBottom: 10 },
+  monthBar: { display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 10px" },
+  navBtn: { width: 44, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: P.card,
+    color: P.dim, border: `1px solid ${P.lineSoft}`, borderRadius: 12, cursor: "pointer" },
+  monthName: { fontWeight: 800, fontSize: 18, color: P.text },
+  todayBtn: { background: "none", border: "none", color: P.gold, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: "3px 2px" },
+
+  /* the grid runs edge to edge on a phone: every pixel of width goes to the words */
+  gridWrap: { maxWidth: 760, margin: "0 auto", padding: "0 3px" },
+  dowRow: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 2, marginBottom: 3 },
+  dowCell: { textAlign: "center", fontSize: 11, fontWeight: 800, color: P.faint, letterSpacing: 0.6 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 2 },
+  emptyCell: { minHeight: 92 },
+  cell: { minHeight: 92, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, padding: "3px 2px 4px",
+    background: P.card, border: `1px solid ${P.lineSoft}`, borderRadius: 7, cursor: "pointer", textAlign: "left",
+    color: P.text, overflow: "hidden", minWidth: 0 },
+  cellSel: { borderColor: P.gold, boxShadow: `inset 0 0 0 1px ${P.gold}`, background: "#1a1913" },
+  cellTop: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 2px 1px", minHeight: 20 },
+  cellNum: { fontSize: 12.5, fontWeight: 800, color: P.dim, minWidth: 20, height: 20, lineHeight: "20px", textAlign: "center", borderRadius: 10 },
+  cellNumToday: { background: P.gold, color: "#0b0b0d" },
+  mealMark: { opacity: 0.85 },
+  tag: { display: "block", borderRadius: 4, padding: "2px 3px", minWidth: 0 },
+  tagText: { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "break-word",
+    fontSize: 10.5, lineHeight: "12.5px", maxHeight: 25, fontWeight: 600 },
+  moreTag: { fontSize: 10, color: P.gold, fontWeight: 700, padding: "0 3px" },
+
+  legend: { display: "flex", flexWrap: "wrap", gap: "6px 14px", justifyContent: "center", margin: "12px 0 14px" },
+  legendItem: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: P.dim },
+  dot: { width: 9, height: 9, borderRadius: "50%", display: "inline-block" },
+
+  dayCard: { background: P.card, border: `1px solid ${P.lineSoft}`, borderRadius: 16, padding: 14 },
+  dayHead: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 6 },
+  dayTitle: { fontSize: 18, fontWeight: 800, color: P.text },
+  todayTag: { display: "inline-block", marginTop: 4, fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase",
+    color: "#0b0b0d", background: P.gold, borderRadius: 6, padding: "2px 7px" },
+  iconSq: { width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center", background: P.card2,
+    border: `1px solid ${P.line}`, borderRadius: 12, cursor: "pointer" },
+  iconSqOn: { background: P.gold, borderColor: P.gold },
+  addBtn: { display: "inline-flex", alignItems: "center", gap: 6, height: 42, padding: "0 14px", border: "none", borderRadius: 12,
+    background: "linear-gradient(180deg,#e2b862,#c8953c)", color: "#1a140a", fontWeight: 800, fontSize: 14.5, cursor: "pointer" },
+
+  moneyRow: { display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: `1px solid ${P.lineSoft}`, fontSize: 14.5 },
+  meal: { display: "flex", alignItems: "center", gap: 10, background: "#0f0f12", border: `1px solid ${P.line}`, borderRadius: 12,
+    padding: "4px 12px", marginTop: 12 },
+  mealInput: { flex: 1, background: "transparent", border: "none", color: P.text, fontSize: 15.5, padding: "10px 0", outline: "none" },
+  evRow: { display: "flex", alignItems: "center", gap: 6, background: "#0f0f12", borderRadius: 12, padding: "10px 6px 10px 12px", marginTop: 10 },
+  evTitle: { fontSize: 15.5, fontWeight: 700, color: P.text },
+  evMeta: { display: "flex", flexWrap: "wrap", gap: 5, fontSize: 12.5, color: P.dim, marginTop: 3 },
+  xBtn: { width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent",
+    border: "none", color: P.dim, borderRadius: 10, cursor: "pointer", flexShrink: 0 },
+  empty: { color: P.dim, fontSize: 13.5, textAlign: "center", padding: "22px 10px 8px" },
+
+  editor: { background: "#0f0f12", border: `1px solid ${P.line}`, borderRadius: 14, padding: 14, marginTop: 12 },
+  label: { display: "block", fontSize: 12.5, fontWeight: 700, color: P.dim, margin: "14px 0 5px" },
+  miniLabel: { display: "block", fontSize: 11, fontWeight: 700, color: P.faint, margin: "8px 0 2px", textTransform: "uppercase", letterSpacing: 0.5 },
+  input: { width: "100%", boxSizing: "border-box", background: P.bg, color: P.text, border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 11, padding: "11px 12px", fontSize: 16, outline: "none", colorScheme: "dark", fontFamily: font },
+  chips: { display: "flex", flexWrap: "wrap", gap: 7 },
+  chip: { background: P.card2, color: P.dim, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 999,
+    padding: "9px 14px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" },
+  chipOn: { background: "rgba(214,166,78,0.2)", color: P.goldHi, borderColor: "rgba(214,166,78,0.55)" },
+  toggle: { display: "flex", alignItems: "center", gap: 10, fontSize: 14.5, color: P.text, marginTop: 14 },
+  btnRow: { display: "flex", gap: 8, marginTop: 16 },
+  primary: { flex: 1, background: "linear-gradient(180deg,#e2b862,#c8953c)", color: "#1a140a", border: "none", borderRadius: 12,
+    padding: "13px 16px", fontSize: 15, fontWeight: 800, cursor: "pointer" },
+  secondary: { flex: 1, background: P.card2, color: P.text, border: `1px solid ${P.line}`, borderRadius: 12,
+    padding: "13px 16px", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },
+
+  noteInfo: { background: "rgba(214,166,78,0.08)", border: `1px solid ${P.line}`, color: P.goldHi, borderRadius: 10,
+    padding: "9px 11px", fontSize: 13, marginTop: 8 },
+  noteErr: { display: "flex", alignItems: "center", gap: 6, background: "rgba(242,139,130,0.1)", border: "1px solid rgba(242,139,130,0.3)",
+    color: P.red, borderRadius: 10, padding: "4px 4px 4px 11px", fontSize: 13, marginTop: 8 },
+  review: { background: "#0f0f12", border: `1px solid ${P.line}`, borderRadius: 14, padding: 14, marginTop: 10 },
+  draft: { background: P.card, borderRadius: 12, padding: "8px 10px 12px", marginBottom: 10 },
+  lowConf: { fontSize: 12, color: P.amber, background: "rgba(242,196,109,0.1)", border: "1px solid rgba(242,196,109,0.28)",
+    borderRadius: 8, padding: "5px 8px", marginTop: 6 },
+
+  toast: { position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "calc(26px + env(safe-area-inset-bottom, 0px))",
+    background: "#24242a", color: P.text, border: `1px solid ${P.line}`, borderRadius: 999, padding: "11px 18px",
+    fontSize: 14, fontWeight: 600, boxShadow: "0 10px 30px rgba(0,0,0,0.5)", zIndex: 50, whiteSpace: "nowrap" },
 };
