@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { SPEND_CATS, monthKey, todayIso, daysInMonth, inPeriod, dayOf, money, fetchMonth, computeMonth } from "./moneyMath.js";
+import { SPEND_CATS, monthKey, todayIso, daysInMonth, inPeriod, dayOf, money, fetchMonth, computeMonth,
+  PAY_FREQS, describeSchedule, nextPayday } from "./moneyMath.js";
 
 /* =====================================================================
    Money — household cash flow: paychecks, spending, budgets, bills, savings.
@@ -127,6 +128,8 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
   const [budgets, setBudgets] = useState([]);
   const [goals, setGoals] = useState([]);
   const [moves, setMoves] = useState([]);
+  const [paySchedules, setPaySchedules] = useState([]);
+  const [payForm, setPayForm] = useState(null);       // setting someone's pay schedule
   const [moneyReady, setMoneyReady] = useState(true);
   const [period, setPeriod] = useState(monthKey());
   const [loading, setLoading] = useState(true);
@@ -171,7 +174,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
     const d = await fetchMonth(supabase, period);
     setBills(d.bills); setPayments(d.payments); setMoneyReady(d.moneyReady);
     if (d.moneyReady) { setIncome(d.income); setSpending(d.spending); }
-    setBudgets(d.budgets); setGoals(d.goals); setMoves(d.moves);
+    setBudgets(d.budgets); setGoals(d.goals); setMoves(d.moves); setPaySchedules(d.paySchedules || []);
     setLoading(false);
   }, [supabase, credsMissing, period]);
 
@@ -179,7 +182,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
     load();
     if (credsMissing) return;
     let ch = supabase.channel("money-sync");
-    for (const t of ["bills", "bill_payments", "income", "spending", "budgets", "savings_goals", "savings_moves"])
+    for (const t of ["bills", "bill_payments", "income", "spending", "budgets", "savings_goals", "savings_moves", "pay_schedules"])
       ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, load);
     ch.subscribe();
     return () => supabase.removeChannel(ch);
@@ -298,6 +301,34 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
     } catch (err) { console.error(err); flash(err.message || "Couldn't read that receipt"); }
     setReading(null);
   }
+
+  /* ================= pay schedules ================= */
+  const startPay = (who) => {
+    const s0 = paySchedules.find((x) => x.who === who);
+    setPayForm(s0 ? { who, frequency: s0.frequency, anchor: s0.anchor_date || todayIso(), day1: String(s0.day1 || 1), day2: String(s0.day2 || 15) }
+      : { who, frequency: "biweekly", anchor: todayIso(), day1: "1", day2: "15" });
+  };
+  const savePay = async () => {
+    const f = payForm.frequency, row = { who: payForm.who, frequency: f, active: true, updated_at: new Date().toISOString(),
+      anchor_date: null, day1: null, day2: null };
+    if (f === "weekly" || f === "biweekly") {
+      if (!isYmd(payForm.anchor)) { flash("Pick a recent payday"); return; }
+      row.anchor_date = payForm.anchor;
+    } else {
+      const d1 = parseInt(payForm.day1, 10), d2 = parseInt(payForm.day2, 10);
+      if (!(d1 >= 1 && d1 <= 31)) { flash("Pick a day of the month"); return; }
+      row.day1 = d1;
+      if (f === "semimonthly") { if (!(d2 >= 1 && d2 <= 31) || d2 === d1) { flash("Pick two different days"); return; } row.day2 = d2; }
+    }
+    setPaySchedules((l) => [...l.filter((x) => x.who !== row.who), row]);
+    setPayForm(null);
+    try { await supabase.from("pay_schedules").upsert(row, { onConflict: "who" }); flash(`${personName(row.who)}'s paydays saved`); }
+    catch (e) { console.error(e); flash("Couldn't save"); load(); }
+  };
+  const removePay = async (who) => {
+    setPaySchedules((l) => l.filter((x) => x.who !== who));
+    try { await supabase.from("pay_schedules").delete().eq("who", who); } catch (e) { console.error(e); load(); }
+  };
 
   /* ================= bills ================= */
   const markPaid = async (bill, amt) => {
@@ -486,7 +517,7 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
   const TABS = [["overview", "Overview"], ["spending", "Spending"], ["bills", "Bills"], ["savings", "Savings"]];
   const toneCol = { red: C.red, amber: C.amber, gold: C.gold, green: C.green };
   const rowMenu = (title, actions) => setSheet({ title, actions });
-  const overlayOpen = ql || sheet || details || history || askAmount;
+  const overlayOpen = ql || sheet || details || history || askAmount || payForm;
 
   const Bar = ({ frac, color, mark }) => (
     <div style={S.bar}>
@@ -599,6 +630,27 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
                       [{ label: "Delete", icon: "trash", danger: true, onClick: () => deleteEntry("income", r) }])}><Icon name="more" size={18} /></button>
                   </div>
                 ))}
+              <div style={S.subHead}>Paydays</div>
+              {PEOPLE.map((p) => {
+                const ps = paySchedules.find((x) => x.who === p.id);
+                if (!ps) return (
+                  <button key={p.id} style={S.setPay} onClick={() => startPay(p.id)}>
+                    <Icon name="calendar" size={16} color={C.gold} /><span>Set {p.name}'s paydays</span></button>
+                );
+                const nx = nextPayday(ps, todayIso());
+                return (
+                  <div key={p.id} style={S.row}>
+                    <Icon name="calendar" size={16} color={C.green} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={S.rowName}>{p.name}</div>
+                      <div style={S.rowMeta}>{describeSchedule(ps)}{nx ? ` · next ${shortDate(nx)}` : ""}</div>
+                    </div>
+                    <button style={S.more} aria-label="Payday options" onClick={() => rowMenu(`${p.name}'s paydays`, [
+                      { label: "Change schedule", icon: "edit", onClick: () => startPay(p.id) },
+                      { label: "Remove", icon: "trash", danger: true, onClick: () => removePay(p.id) }])}><Icon name="more" size={18} /></button>
+                  </div>
+                );
+              })}
             </div>
 
             {spending.length > 0 && (
@@ -950,6 +1002,53 @@ export default function BillTracker({ supabase, profile, onBack, credsMissing, s
         </div>
       )}
 
+      {/* ---- pay schedule ---- */}
+      {payForm && (
+        <div style={S.scrim} onClick={() => setPayForm(null)}>
+          <div style={S.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={S.grab} />
+            <div style={S.sheetTitle}>{personName(payForm.who)}'s paydays</div>
+            <div style={S.muted}>So paydays show on the calendar ahead of time. You'll still log the actual amount when it lands.</div>
+            <label style={S.label}>How often</label>
+            <div style={S.chips}>
+              {PAY_FREQS.map(([v, l]) => (
+                <button key={v} style={{ ...S.chip, ...(payForm.frequency === v ? S.chipOn : {}) }}
+                  onClick={() => setPayForm((f) => ({ ...f, frequency: v }))}>{l}</button>
+              ))}
+            </div>
+            {(payForm.frequency === "weekly" || payForm.frequency === "biweekly") ? (
+              <>
+                <label style={S.label}>Pick any recent payday</label>
+                <input style={S.input} type="date" value={payForm.anchor} onChange={(e) => setPayForm((f) => ({ ...f, anchor: e.target.value }))} />
+                <div style={S.hint}>The app counts forward {payForm.frequency === "weekly" ? "a week" : "two weeks"} at a time from this date.</div>
+              </>
+            ) : (
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={S.label}>{payForm.frequency === "monthly" ? "Day of the month" : "First day"}</label>
+                  <input style={S.input} type="number" inputMode="numeric" min="1" max="31" value={payForm.day1}
+                    onChange={(e) => setPayForm((f) => ({ ...f, day1: e.target.value }))} />
+                </div>
+                {payForm.frequency === "semimonthly" && (
+                  <div style={{ flex: 1 }}>
+                    <label style={S.label}>Second day</label>
+                    <input style={S.input} type="number" inputMode="numeric" min="1" max="31" value={payForm.day2}
+                      onChange={(e) => setPayForm((f) => ({ ...f, day2: e.target.value }))} />
+                  </div>
+                )}
+              </div>
+            )}
+            {payForm.frequency !== "weekly" && payForm.frequency !== "biweekly" && (
+              <div style={S.hint}>Pick 31 for "the last day of the month" — short months use their last day.</div>
+            )}
+            <div style={S.formBtns}>
+              <button style={S.primary} onClick={savePay}>Save</button>
+              <button style={S.secondary} onClick={() => setPayForm(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---- row menu ---- */}
       {sheet && (
         <div style={S.scrim} onClick={() => setSheet(null)}>
@@ -1100,6 +1199,9 @@ const S = {
   cardHead: { fontSize: 15.5, fontWeight: 800, color: C.text },
   cardHeadRow: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 },
   cardTotal: { fontWeight: 800, color: C.dim, fontSize: 14 },
+  subHead: { fontSize: 11.5, letterSpacing: 0.8, textTransform: "uppercase", color: C.faint, fontWeight: 700, margin: "16px 0 2px" },
+  setPay: { display: "flex", alignItems: "center", gap: 9, width: "100%", background: "transparent", color: C.gold,
+    border: `1px dashed ${C.line}`, borderRadius: 12, padding: "11px 12px", marginTop: 8, fontSize: 14, fontWeight: 700, cursor: "pointer" },
   muted: { fontSize: 13.5, color: C.dim, lineHeight: 1.45 },
   allGood: { display: "flex", alignItems: "center", gap: 9, color: C.dim, fontSize: 14, paddingTop: 6 },
   alert: { display: "flex", alignItems: "center", gap: 10, width: "100%", background: "transparent", border: "none",

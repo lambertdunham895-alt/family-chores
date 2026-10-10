@@ -32,7 +32,7 @@ export function money(n) {
 
 /* everything one month's numbers depend on */
 export async function fetchMonth(supabase, period) {
-  const out = { bills: [], payments: [], income: [], spending: [], budgets: [], goals: [], moves: [], moneyReady: true };
+  const out = { bills: [], payments: [], income: [], spending: [], budgets: [], goals: [], moves: [], paySchedules: [], moneyReady: true };
   try {
     const [b, p] = await Promise.all([
       supabase.from("bills").select("*").eq("active", true).order("due_day", { ascending: true }),
@@ -58,7 +58,15 @@ export async function fetchMonth(supabase, period) {
     if (!gl.error) out.goals = gl.data || [];
     if (!mv.error) out.moves = mv.data || [];
   } catch (e) { console.error(e); }
+  out.paySchedules = await fetchPaySchedules(supabase);
   return out;
+}
+
+export async function fetchPaySchedules(supabase) {
+  try {
+    const { data, error } = await supabase.from("pay_schedules").select("*").eq("active", true);
+    return error ? [] : (data || []);
+  } catch (e) { return []; }
 }
 
 /* every derived number for a month */
@@ -114,4 +122,62 @@ export function computeMonth(d, period, now = new Date()) {
   return { paidMap, isPaid, amtFor, visible, billsTotal, billsPaid, billsLeft, incomeTotal, spendTotal,
     movedFor, savingsReserved, savingsMoved, savedTotal, thisMonth, dayNow, viewingThisMonth, dim, monthFrac,
     daysLeft, budgetRows, budgetHeadroom, afterBills, safeToSpend, inHand };
+}
+
+
+/* =====================================================================
+   Paydays. Day arithmetic runs on whole-day numbers in UTC so daylight-saving
+   changes can never shift a payday by a day; dates are written back out as
+   plain YYYY-MM-DD strings.
+   ===================================================================== */
+const dayNum = (iso) => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+const isoFromDayNum = (n) => { const d = new Date(n * 86400000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`; };
+
+export const PAY_FREQS = [
+  ["weekly", "Every week"], ["biweekly", "Every 2 weeks"], ["semimonthly", "Twice a month"], ["monthly", "Once a month"],
+];
+
+/* every expected payday between two dates (inclusive), as [{date, who}] sorted by date */
+export function paydaysBetween(schedules, startIso, endIso) {
+  const out = [], a = dayNum(startIso), b = dayNum(endIso);
+  for (const s of schedules || []) {
+    if (s.active === false) continue;
+    if ((s.frequency === "weekly" || s.frequency === "biweekly") && s.anchor_date) {
+      const step = s.frequency === "weekly" ? 7 : 14, anchor = dayNum(s.anchor_date);
+      let n = anchor + Math.ceil((a - anchor) / step) * step;      // first payday on or after the start
+      for (; n <= b; n += step) out.push({ date: isoFromDayNum(n), who: s.who });
+    } else if (s.frequency === "semimonthly" || s.frequency === "monthly") {
+      const days = s.frequency === "monthly" ? [s.day1] : [s.day1, s.day2];
+      const [sy, sm] = startIso.split("-").map(Number), [ey, em] = endIso.split("-").map(Number);
+      for (let y = sy, m = sm; y < ey || (y === ey && m <= em); m === 12 ? (y++, m = 1) : m++) {
+        const last = new Date(y, m, 0).getDate();
+        for (const dd of new Set(days.filter((x) => x).map((x) => Math.min(x, last)))) {   // the 31st becomes the last day
+          const iso = `${y}-${String(m).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+          if (iso >= startIso && iso <= endIso) out.push({ date: iso, who: s.who });
+        }
+      }
+    }
+  }
+  return out.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+}
+
+export function nextPayday(schedule, fromIso) {
+  const end = isoFromDayNum(dayNum(fromIso) + 62);
+  return paydaysBetween([schedule], fromIso, end)[0]?.date || null;
+}
+
+export function describeSchedule(s) {
+  const ord = (n) => { const t = ["th", "st", "nd", "rd"], v = n % 100; return n + (t[(v - 20) % 10] || t[v] || t[0]); };
+  if (s.frequency === "weekly") return "Every week";
+  if (s.frequency === "biweekly") return "Every 2 weeks";
+  if (s.frequency === "semimonthly") return `The ${ord(s.day1)} and ${ord(s.day2)}`;
+  if (s.frequency === "monthly") return `The ${ord(s.day1)} of each month`;
+  return "";
+}
+
+/* a payday counts as "landed" if a paycheck for that person was logged within two days of it */
+export function landedNear(income, who, iso) {
+  const n = dayNum(iso);
+  return (income || []).find((r) => r.who === who && Math.abs(dayNum(r.received_on) - n) <= 2) || null;
 }

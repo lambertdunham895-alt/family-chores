@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { fetchMonth, computeMonth, monthKey, todayIso, daysInMonth, dayOf, money } from "./moneyMath.js";
+import { fetchMonth, computeMonth, monthKey, todayIso, daysInMonth, dayOf, money, paydaysBetween, landedNear } from "./moneyMath.js";
 
 /* =====================================================================
    This Week — the next seven days at a glance on the home screen:
@@ -30,6 +30,7 @@ const PATHS = {
   dinner: <><path d="M4 3v8a2 2 0 0 0 2 2h1v8M7 3v6M10 3v8" /><path d="M18 21V3c-2 1.5-3 4-3 7v4h3" /></>,
   right: <path d="M9 6l6 6-6 6" />,
   alert: <><path d="M12 3l9.5 17h-19z" /><path d="M12 10v4M12 17h.01" /></>,
+  pay: <><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3" /><path d="M21 11h-4a2 2 0 0 0 0 4h4z" /></>,
 };
 function Ico({ name, size = 15, color = "currentColor" }) {
   return (
@@ -62,7 +63,7 @@ export default function ThisWeek({ supabase, credsMissing, onOpenCalendar, onOpe
     load();
     if (credsMissing || !supabase) return;
     let ch = supabase.channel("thisweek-sync");
-    for (const t of ["events", "meals", "bills", "bill_payments", "income", "spending", "budgets", "savings_goals", "savings_moves"])
+    for (const t of ["events", "meals", "bills", "bill_payments", "income", "spending", "budgets", "savings_goals", "savings_moves", "pay_schedules"])
       ch = ch.on("postgres_changes", { event: "*", schema: "public", table: t }, load);
     ch.subscribe();
     return () => supabase.removeChannel(ch);
@@ -88,6 +89,7 @@ export default function ThisWeek({ supabase, credsMissing, onOpenCalendar, onOpe
     return !paidIn(b, data.p0) && Math.min(dayOf(b), daysInMonth(data.p0)) < now.getDate();
   });
 
+  const pays = paydaysBetween(data.m0.paySchedules, todayIso(now), todayIso(addDays(now, 6)));
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = addDays(now, i), iso = todayIso(d), key = monthKey(d);
@@ -95,7 +97,8 @@ export default function ThisWeek({ supabase, credsMissing, onOpenCalendar, onOpe
       (!a.start_time && b.start_time) ? -1 : (a.start_time && !b.start_time) ? 1 : (a.start_time || "").localeCompare(b.start_time || ""));
     const bills = data.m0.bills.filter((b) => dueOn(b, d) && !paidIn(b, key));
     const dinner = (data.meals.find((m) => m.day === iso) || {}).dinner;
-    days.push({ i, d, iso, events, bills, dinner, empty: !events.length && !bills.length && !dinner });
+    const paydays = pays.filter((p) => p.date === iso).map((p) => ({ ...p, landed: landedNear(data.m0.income, p.who, iso) }));
+    days.push({ i, d, iso, events, bills, dinner, paydays, empty: !events.length && !bills.length && !dinner && !paydays.length });
   }
   const busy = days.filter((x) => !x.empty);
   const shown = showAll ? days : busy.slice(0, 4);
@@ -142,6 +145,13 @@ export default function ThisWeek({ supabase, credsMissing, onOpenCalendar, onOpe
             <span style={S.dayDate}>{x.d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
           </div>
           {x.empty && <div style={S.quiet}>Nothing planned</div>}
+          {x.paydays.map((p) => (
+            <button key={p.who} style={S.item} onClick={() => onOpenMoney && onOpenMoney("overview")}>
+              <Ico name="pay" size={14} color={C.green} />
+              <span style={{ ...S.what, color: C.green }}>{(WHO[p.who] || WHO.family).name} {p.landed ? "paid" : "payday"}</span>
+              {p.landed && <span style={{ ...S.amt, color: C.green }}>+{money(p.landed.amount)}</span>}
+            </button>
+          ))}
           {x.events.map((e) => (
             <button key={e.id} style={S.item} onClick={onOpenCalendar}>
               <span style={{ ...S.dot, background: (WHO[e.who] || WHO.family).color }} />
