@@ -13,8 +13,8 @@ import { fetchMonth, monthKey, inPeriod, dayOf, daysInMonth as dimOf, paydaysBet
 const WHO = [
   { id: "family",  name: "Family", color: "#b39ddb" },
   { id: "adult_a", name: "Dad",    color: "#7ea6c9" },
-  { id: "adult_b", name: "Mom",    color: "#7fc29b" },
-  { id: "kid",     name: "Nolan",  color: "#e0a873" },
+  { id: "adult_b", name: "Mom",    color: "#ff7eb6" },
+  { id: "kid",     name: "Nolan",  color: "#4dd4e8" },
 ];
 const whoOf = (id) => WHO.find((w) => w.id === id) || WHO[0];
 
