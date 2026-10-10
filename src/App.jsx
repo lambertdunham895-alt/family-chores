@@ -1583,10 +1583,6 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuick
         <div style={S.hubRule} />
         <p style={S.hubSub}>Welcome home. Pick what you're doing.</p>
 
-        {/* the next seven days: events, bills due, dinners, and what's safe to spend */}
-        <ThisWeek supabase={supabase} credsMissing={credsMissing}
-          onOpenCalendar={onCalendar} onOpenMoney={onOpenMoney} />
-
         <div style={S.hubGrid}>
           {TILES.map((t, i) => {
             const on = hover === t.id;
@@ -1621,6 +1617,12 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuick
           <HubIcon name="grocery" size={18} />
           <span>Log spending</span>
         </button>
+
+        {/* the next seven days, below the shortcuts: events, bills due, dinners, and what's safe to spend */}
+        <div style={{ marginTop: 18 }}>
+          <ThisWeek supabase={supabase} credsMissing={credsMissing}
+            onOpenCalendar={onCalendar} onOpenMoney={onOpenMoney} />
+        </div>
 
         <div style={{ textAlign: "center", marginTop: 22 }}>
           <button style={S.hubLock} onClick={handleLock}>
