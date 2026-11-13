@@ -1843,10 +1843,12 @@ const S = {
   /* fixed to every edge, so nothing white can ever show around it. Every size below is
      the smaller of a width share and a height share of the screen, so the whole thing —
      crest to the 0 key — fits on any phone without scrolling, however large its display is set. */
-  pinScreen: { position: "fixed", inset: 0, zIndex: 100, overflowY: "auto", background: "#0b0b0d",
+  pinScreen: { position: "fixed", inset: 0, zIndex: 100, overflowX: "hidden", overflowY: "auto", background: "#0b0b0d",
+    overscrollBehavior: "none", touchAction: "pan-y",   /* it can never be dragged sideways */
     display: "flex", justifyContent: "center", WebkitTapHighlightColor: "transparent",
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
   pinGlow: { position: "absolute", top: "-8vh", left: "50%", width: "min(130vw, 560px)", height: "min(130vw, 560px)",
+    maxWidth: "none",
     transform: "translateX(-50%)",
     background: "radial-gradient(circle, rgba(214,166,78,0.26) 0%, rgba(214,166,78,0.07) 38%, transparent 66%)",
     animation: "pinGlow 5s ease-in-out infinite", pointerEvents: "none" },
@@ -1857,14 +1859,14 @@ const S = {
   pinCrest: { width: "min(44vw, 22vh, 176px)", height: "min(44vw, 22vh, 176px)", borderRadius: "22%", display: "block",
     boxShadow: "0 0 0 1px rgba(214,166,78,0.35), 0 18px 50px rgba(0,0,0,0.7), 0 0 60px rgba(214,166,78,0.22)" },
   pinTitle: { margin: "min(3vh, 26px) 0 0", fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "min(8vw, 4.4vh, 32px)", fontWeight: 700, letterSpacing: 1, whiteSpace: "nowrap",
-    textAlign: "center", lineHeight: 1.15,
+    /* sized to fit one line; if a phone's own serif font runs wider, it wraps neatly instead of spilling off */
+    fontSize: "min(7.4vw, 4.4vh, 32px)", fontWeight: 700, letterSpacing: 1, textWrap: "balance", maxWidth: "100%",
+    textAlign: "center", lineHeight: 1.15, overflowWrap: "break-word",
     background: "linear-gradient(180deg,#f6e3b4 0%,#d6a64e 55%,#a97c2e 100%)", WebkitBackgroundClip: "text",
     backgroundClip: "text", WebkitTextFillColor: "transparent", color: "#d6a64e" },
   pinRule: { width: 96, height: 1, margin: "min(1.6vh, 14px) 0 0",
     background: "linear-gradient(90deg, transparent, rgba(214,166,78,0.9), transparent)" },
-  pinSub: { margin: "min(1.8vh, 16px) 0 0", color: "#a5a5ae", fontSize: "min(4.2vw, 2.2vh, 15px)", textAlign: "center",
-    whiteSpace: "nowrap" },
+  pinSub: { margin: "min(1.8vh, 16px) 0 0", color: "#a5a5ae", fontSize: "min(4.2vw, 2.2vh, 15px)", textAlign: "center" },
   pinDots: { display: "flex", gap: "min(5vw, 18px)", margin: "min(2.4vh, 22px) 0 min(1.5vh, 12px)" },
   pinDot: { width: "min(3.8vw, 1.8vh, 15px)", height: "min(3.8vw, 1.8vh, 15px)", borderRadius: "50%",
     border: "1.5px solid rgba(214,166,78,0.65)", background: "transparent",
