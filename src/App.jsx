@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
 import TicTacToe from "./games/TicTacToe.jsx";
 import PegWars from "./games/PegWars.jsx";
@@ -586,11 +587,7 @@ export default function App() {
             </button>
             <button
               style={{ ...S.switchBtn, fontSize: 12 }}
-              onClick={() => {
-                if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
-                try { localStorage.removeItem("family_pin_unlock"); } catch {}
-                window.location.reload();
-              }}
+              onClick={requestLock}
             >
               🔒 Lock this device
             </button>
@@ -1436,6 +1433,99 @@ function BonusView({ balance, bonuses, onGive }) {
 }
 
 
+/* ---------------- "Lock this device?" — spy edition ----------------
+   Replaces the phone's plain grey pop-up. One function, used by every lock
+   button, so the wording and look always match. A different line each time. */
+const SPY_LINES = [
+  ["Initiate lockdown, Agent?", "The family files will be sealed. Only agents with the code may regain clearance."],
+  ["Seal the vault?", "The location of the good snacks will remain classified."],
+  ["Go dark?", "This device will lock itself. It will not self-destruct. Probably."],
+  ["Classify everything?", "Dinner plans, chore assignments and the budget are now strictly need-to-know."],
+  ["Burn after reading?", "Relax — nothing burns. But you'll need the code to get back in."],
+  ["Secure the safehouse?", "Headquarters goes into lockdown until the secret code is entered."],
+  ["Close the dossier?", "Mission paused. Agents may resume with the four-digit code."],
+  ["Activate cloaking device?", "The Dunham House vanishes from view until the code is entered."],
+];
+
+function requestLock() {
+  if (document.getElementById("spy-lock")) return;
+  const host = document.createElement("div");
+  host.id = "spy-lock";
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const close = () => { root.unmount(); host.remove(); };
+  const lock = () => {
+    try { localStorage.removeItem("family_pin_unlock"); } catch {}
+    window.location.reload();
+  };
+  root.render(<SpyLock onCancel={close} onLock={lock} />);
+}
+
+function SpyLock({ onCancel, onLock }) {
+  const [[title, line]] = useState(() => SPY_LINES[Math.floor(Math.random() * SPY_LINES.length)]);
+  const [leaving, setLeaving] = useState(false);
+  const cancel = () => { setLeaving(true); setTimeout(onCancel, 160); };
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") cancel(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div style={{ ...SPY.scrim, animation: `${leaving ? "spyOut" : "spyIn"} .18s ease forwards` }} onClick={cancel}
+      role="dialog" aria-modal="true" aria-label={title}>
+      <style>{`
+        @keyframes spyIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes spyOut { from { opacity: 1 } to { opacity: 0 } }
+        @keyframes spyCard { from { transform: translateY(14px) scale(.97); opacity: 0 } to { transform: none; opacity: 1 } }
+        @keyframes spyStamp { 0% { transform: rotate(-9deg) scale(1.9); opacity: 0 } 70% { transform: rotate(-9deg) scale(.94); opacity: 1 }
+          100% { transform: rotate(-9deg) scale(1); opacity: 1 } }
+      `}</style>
+      <div style={SPY.card} onClick={(e) => e.stopPropagation()}>
+        <div style={SPY.stamp}>TOP SECRET</div>
+        <div style={SPY.badge}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#d6a64e" strokeWidth="1.8"
+            strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+            <rect x="4.5" y="10.5" width="15" height="10" rx="2.2" /><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" /><path d="M12 14.5v2.5" />
+          </svg>
+        </div>
+        <div style={SPY.title}>{title}</div>
+        <div style={SPY.line}>{line}</div>
+        <div style={SPY.btns}>
+          <button style={SPY.stand} onClick={cancel}>Stand down</button>
+          <button style={SPY.lock} onClick={onLock} autoFocus>Lock it down</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SPY = {
+  scrim: { position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(3px)",
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 22,
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", WebkitTapHighlightColor: "transparent" },
+  card: { position: "relative", width: "100%", maxWidth: 360, boxSizing: "border-box", overflow: "hidden",
+    background: "linear-gradient(165deg,#1d1c18 0%,#141418 60%)", border: "1px solid rgba(214,166,78,0.32)",
+    borderRadius: 22, padding: "30px 22px 20px", textAlign: "center", color: "#f0e6d2",
+    boxShadow: "0 24px 60px rgba(0,0,0,0.7), 0 0 50px rgba(214,166,78,0.10)", animation: "spyCard .22s ease" },
+  stamp: { position: "absolute", top: 18, right: 14, padding: "4px 9px", border: "2px solid rgba(242,139,130,0.85)",
+    borderRadius: 6, color: "rgba(242,139,130,0.92)", fontFamily: "ui-monospace, 'Courier New', monospace",
+    fontSize: 11.5, fontWeight: 800, letterSpacing: 2, animation: "spyStamp .38s .12s ease both" },
+  badge: { width: 58, height: 58, margin: "0 auto 14px", borderRadius: "50%", display: "flex", alignItems: "center",
+    justifyContent: "center", background: "rgba(214,166,78,0.10)", border: "1px solid rgba(214,166,78,0.35)" },
+  title: { fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 23, fontWeight: 700, lineHeight: 1.2,
+    background: "linear-gradient(180deg,#f6e3b4 0%,#d6a64e 60%,#b5883a 100%)", WebkitBackgroundClip: "text",
+    backgroundClip: "text", WebkitTextFillColor: "transparent", color: "#d6a64e", textWrap: "balance" },
+  line: { fontSize: 15, lineHeight: 1.5, color: "#a5a5ae", margin: "10px 4px 22px", textWrap: "pretty" },
+  btns: { display: "flex", gap: 10 },
+  stand: { flex: 1, padding: "14px 10px", borderRadius: 13, background: "#1b1b21", color: "#f0e6d2",
+    border: "1px solid rgba(214,166,78,0.22)", fontSize: 15, fontWeight: 700, cursor: "pointer", outline: "none" },
+  lock: { flex: 1, padding: "14px 10px", borderRadius: 13, border: "none", cursor: "pointer", outline: "none",
+    background: "linear-gradient(180deg,#e2b862,#c8953c)", color: "#1a140a", fontSize: 15, fontWeight: 800,
+    boxShadow: "0 6px 18px rgba(200,149,60,0.25)" },
+};
+
+
 /* ---------------- PIN lock screen ----------------
    The crest, big, with its own keypad. A built-in keypad (rather than the
    phone keyboard) means nothing ever slides up and covers the PIN. */
@@ -1580,9 +1670,7 @@ function LandingHub({ onChores, onGames, onGrocery, onBills, onCalendar, onQuick
   const [hover, setHover] = React.useState(null);
 
   const handleLock = () => {
-    if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
-    try { localStorage.removeItem("family_pin_unlock"); } catch {}
-    window.location.reload();
+    requestLock();
   };
 
   const TILES = [
@@ -1703,9 +1791,7 @@ function Header() {
 
 function TopBar({ profile, onSwitch, onHome }) {
   const handleLock = () => {
-    if (!confirm("Lock this device? You'll need to enter the PIN to unlock.")) return;
-    try { localStorage.removeItem("family_pin_unlock"); } catch {}
-    window.location.reload();
+    requestLock();
   };
   return (
     <div style={S.topbar}>
