@@ -1436,63 +1436,83 @@ function BonusView({ balance, bonuses, onGive }) {
 }
 
 
-/* ---------------- PIN lock screen ---------------- */
+/* ---------------- PIN lock screen ----------------
+   The crest, big, with its own keypad. A built-in keypad (rather than the
+   phone keyboard) means nothing ever slides up and covers the PIN. */
 function PinLock({ onUnlock }) {
-  const [digits, setDigits] = useState(["", "", "", ""]);
+  const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
-  const inputsRef = React.useRef([]);
+  const [done, setDone] = useState(false);
+  const busy = React.useRef(false);
 
-  const handleChange = (i, val) => {
-    if (!/^\d?$/.test(val)) return;
-    const next = [...digits];
-    next[i] = val;
-    setDigits(next);
+  const press = React.useCallback((k) => {
+    if (busy.current) return;
     setError(false);
-    if (val && i < 3) {
-      inputsRef.current[i + 1]?.focus();
-    }
-    if (next.every((d) => d) && next.join("") === FAMILY_PIN) {
-      // small delay so the last digit visually fills in before unlocking
-      setTimeout(onUnlock, 150);
-    } else if (next.every((d) => d) && next.join("") !== FAMILY_PIN) {
-      setError(true);
-      setTimeout(() => {
-        setDigits(["", "", "", ""]);
-        inputsRef.current[0]?.focus();
-      }, 600);
-    }
-  };
+    setPin((cur) => {
+      if (k === "back") return cur.slice(0, -1);
+      if (cur.length >= 4) return cur;
+      const next = cur + k;
+      if (next.length === 4) {
+        busy.current = true;
+        if (next === FAMILY_PIN) {
+          setDone(true);
+          setTimeout(onUnlock, 260);            // let the last dot fill in first
+        } else {
+          setTimeout(() => { setError(true); }, 120);
+          setTimeout(() => { setPin(""); setError(false); busy.current = false; }, 750);
+        }
+      }
+      return next;
+    });
+  }, [onUnlock]);
 
-  const handleKeyDown = (i, e) => {
-    if (e.key === "Backspace" && !digits[i] && i > 0) {
-      inputsRef.current[i - 1]?.focus();
-    }
-  };
+  // a computer keyboard still works
+  useEffect(() => {
+    const onKey = (e) => {
+      if (/^[0-9]$/.test(e.key)) press(e.key);
+      else if (e.key === "Backspace") press("back");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [press]);
 
+  const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
   return (
     <div style={S.pinScreen}>
-      <div style={S.pinCard}>
-        <div style={{ fontSize: 48 }}>🔒</div>
-        <h2 style={S.pinTitle}>Family Chores</h2>
-        <p style={S.pinSub}>Enter the family PIN to continue</p>
-        <div style={S.pinRow}>
-          {digits.map((d, i) => (
-            <input
-              key={i}
-              ref={(el) => (inputsRef.current[i] = el)}
-              style={{ ...S.pinBox, ...(error ? S.pinBoxError : {}) }}
-              type="tel"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={1}
-              value={d}
-              onChange={(e) => handleChange(i, e.target.value)}
-              onKeyDown={(e) => handleKeyDown(i, e)}
-              autoFocus={i === 0}
-            />
+      <style>{`
+        @keyframes pinShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(9px)}
+          60%{transform:translateX(-6px)} 80%{transform:translateX(4px)} }
+        @keyframes pinGlow { 0%,100%{opacity:.55} 50%{opacity:.85} }
+        .pin-key:active { background: rgba(214,166,78,0.22) !important; transform: scale(0.96); }
+      `}</style>
+      <div style={S.pinGlow} />
+      <div style={S.pinInner}>
+        <img src="/icon-512.png" alt="The Dunham House crest" style={S.pinCrest} />
+        <h1 style={S.pinTitle}>The Dunham House</h1>
+        <div style={S.pinRule} />
+        <p style={S.pinSub}>{error ? "That's not it — try again" : "Enter the family PIN"}</p>
+
+        <div style={{ ...S.pinDots, animation: error ? "pinShake .45s ease" : "none" }} aria-label={`${pin.length} of 4 digits entered`}>
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} style={{ ...S.pinDot,
+              ...(i < pin.length ? (error ? S.pinDotErr : S.pinDotOn) : {}),
+              ...(done ? S.pinDotOn : {}) }} />
           ))}
         </div>
-        {error && <div style={S.pinError}>Wrong PIN — try again</div>}
+
+        <div style={S.pinPad}>
+          {KEYS.map((k, i) => k === "" ? <span key={i} /> : (
+            <button key={i} className="pin-key" style={k === "back" ? S.pinKeyBack : S.pinKey}
+              aria-label={k === "back" ? "Delete" : k} onClick={() => press(k)}>
+              {k === "back" ? (
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                  strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>
+                  <path d="M21 5H9l-6 7 6 7h12z" /><path d="M17 9l-6 6M11 9l6 6" />
+                </svg>
+              ) : k}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1818,14 +1838,36 @@ const S = {
   kidBonusBox: { background: "linear-gradient(135deg,#fff4e0,#ffe5c0)", border: "2px solid #f0c97a", borderRadius: 14, padding: "12px 14px", marginBottom: 16 },
   kidBonusTitle: { fontWeight: 800, color: "#8a5a1a", marginBottom: 6, fontSize: 14 },
   kidBonusItem: { display: "flex", alignItems: "center", gap: 10, padding: "4px 0", color: "#5a3a0a" },
-  pinScreen: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#2c5f7c,#3d7a9e)", padding: 20 },
-  pinCard: { background: "#fff", borderRadius: 20, padding: "32px 28px", textAlign: "center", maxWidth: 360, width: "100%", boxShadow: "0 8px 24px rgba(0,0,0,0.2)" },
-  pinTitle: { color: "#2c5f7c", margin: "12px 0 4px", fontSize: 22 },
-  pinSub: { color: "#6b7c8c", fontSize: 14, marginBottom: 24 },
-  pinRow: { display: "flex", gap: 10, justifyContent: "center", marginBottom: 12 },
-  pinBox: { width: 50, height: 60, border: "2px solid #c5d4de", borderRadius: 12, fontSize: 28, fontWeight: 700, textAlign: "center", color: "#2c5f7c", background: "#f8fbfd", outline: "none" },
-  pinBoxError: { borderColor: "#c0392b", color: "#c0392b", background: "#fdf0ee" },
-  pinError: { color: "#c0392b", fontSize: 13, fontWeight: 600, marginTop: 8 },
+  /* fixed to every edge, so nothing white can ever show around it */
+  pinScreen: { position: "fixed", inset: 0, zIndex: 100, overflowY: "auto", background: "#0b0b0d",
+    display: "flex", justifyContent: "center", WebkitTapHighlightColor: "transparent",
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
+  pinGlow: { position: "absolute", top: "-6%", left: "50%", width: 520, height: 520, transform: "translateX(-50%)",
+    background: "radial-gradient(circle, rgba(214,166,78,0.26) 0%, rgba(214,166,78,0.07) 38%, transparent 66%)",
+    animation: "pinGlow 5s ease-in-out infinite", pointerEvents: "none" },
+  pinInner: { position: "relative", width: "100%", maxWidth: 360, padding: "max(7vh, 34px) 24px 28px",
+    display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box" },
+  pinCrest: { width: "min(46vw, 176px)", height: "min(46vw, 176px)", borderRadius: "22%", display: "block",
+    boxShadow: "0 0 0 1px rgba(214,166,78,0.35), 0 18px 50px rgba(0,0,0,0.7), 0 0 60px rgba(214,166,78,0.22)" },
+  pinTitle: { margin: "26px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 32, fontWeight: 700,
+    letterSpacing: 1.2, textAlign: "center", lineHeight: 1.15,
+    background: "linear-gradient(180deg,#f6e3b4 0%,#d6a64e 55%,#a97c2e 100%)", WebkitBackgroundClip: "text",
+    backgroundClip: "text", WebkitTextFillColor: "transparent", color: "#d6a64e" },
+  pinRule: { width: 96, height: 1, margin: "14px 0 0",
+    background: "linear-gradient(90deg, transparent, rgba(214,166,78,0.9), transparent)" },
+  pinSub: { margin: "16px 0 0", color: "#a5a5ae", fontSize: 15, minHeight: 20, textAlign: "center" },
+  pinDots: { display: "flex", gap: 18, margin: "22px 0 30px" },
+  pinDot: { width: 15, height: 15, borderRadius: "50%", border: "1.5px solid rgba(214,166,78,0.65)",
+    background: "transparent", transition: "background .12s, border-color .12s, box-shadow .12s" },
+  pinDotOn: { background: "#d6a64e", borderColor: "#d6a64e", boxShadow: "0 0 12px rgba(214,166,78,0.6)" },
+  pinDotErr: { background: "#f28b82", borderColor: "#f28b82", boxShadow: "0 0 12px rgba(242,139,130,0.5)" },
+  pinPad: { display: "grid", gridTemplateColumns: "repeat(3, 76px)", gap: "14px 26px", justifyContent: "center" },
+  pinKey: { width: 76, height: 76, borderRadius: "50%", border: "1px solid rgba(214,166,78,0.28)",
+    background: "rgba(255,255,255,0.045)", color: "#f0e6d2", fontSize: 30, fontWeight: 500, cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "transform .08s",
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", fontVariantNumeric: "tabular-nums" },
+  pinKeyBack: { width: 76, height: 76, borderRadius: "50%", border: "none", background: "transparent", color: "#a5a5ae",
+    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none" },
   todayFilterRow: { display: "flex", gap: 6, marginBottom: 10 },
   todayFilterBtn: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
   todayFilterBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
