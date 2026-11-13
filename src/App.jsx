@@ -1487,6 +1487,7 @@ function PinLock({ onUnlock }) {
       `}</style>
       <div style={S.pinGlow} />
       <div style={S.pinInner}>
+        <div style={S.pinTop}>
         <img src="/icon-512.png" alt="The Dunham House crest" style={S.pinCrest} />
         <h1 style={S.pinTitle}>The Dunham House</h1>
         <div style={S.pinRule} />
@@ -1498,6 +1499,7 @@ function PinLock({ onUnlock }) {
               ...(i < pin.length ? (error ? S.pinDotErr : S.pinDotOn) : {}),
               ...(done ? S.pinDotOn : {}) }} />
           ))}
+        </div>
         </div>
 
         <div style={S.pinPad}>
@@ -1838,36 +1840,48 @@ const S = {
   kidBonusBox: { background: "linear-gradient(135deg,#fff4e0,#ffe5c0)", border: "2px solid #f0c97a", borderRadius: 14, padding: "12px 14px", marginBottom: 16 },
   kidBonusTitle: { fontWeight: 800, color: "#8a5a1a", marginBottom: 6, fontSize: 14 },
   kidBonusItem: { display: "flex", alignItems: "center", gap: 10, padding: "4px 0", color: "#5a3a0a" },
-  /* fixed to every edge, so nothing white can ever show around it */
+  /* fixed to every edge, so nothing white can ever show around it. Every size below is
+     the smaller of a width share and a height share of the screen, so the whole thing —
+     crest to the 0 key — fits on any phone without scrolling, however large its display is set. */
   pinScreen: { position: "fixed", inset: 0, zIndex: 100, overflowY: "auto", background: "#0b0b0d",
     display: "flex", justifyContent: "center", WebkitTapHighlightColor: "transparent",
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
-  pinGlow: { position: "absolute", top: "-6%", left: "50%", width: 520, height: 520, transform: "translateX(-50%)",
+  pinGlow: { position: "absolute", top: "-8vh", left: "50%", width: "min(130vw, 560px)", height: "min(130vw, 560px)",
+    transform: "translateX(-50%)",
     background: "radial-gradient(circle, rgba(214,166,78,0.26) 0%, rgba(214,166,78,0.07) 38%, transparent 66%)",
     animation: "pinGlow 5s ease-in-out infinite", pointerEvents: "none" },
-  pinInner: { position: "relative", width: "100%", maxWidth: 360, padding: "max(7vh, 34px) 24px 28px",
-    display: "flex", flexDirection: "column", alignItems: "center", boxSizing: "border-box" },
-  pinCrest: { width: "min(46vw, 176px)", height: "min(46vw, 176px)", borderRadius: "22%", display: "block",
+  pinInner: { position: "relative", width: "100%", maxWidth: 380, minHeight: "100%", boxSizing: "border-box",
+    padding: "max(4vh, 14px) 18px max(3.5vh, 14px)",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between" },
+  pinTop: { display: "flex", flexDirection: "column", alignItems: "center", width: "100%" },
+  pinCrest: { width: "min(44vw, 22vh, 176px)", height: "min(44vw, 22vh, 176px)", borderRadius: "22%", display: "block",
     boxShadow: "0 0 0 1px rgba(214,166,78,0.35), 0 18px 50px rgba(0,0,0,0.7), 0 0 60px rgba(214,166,78,0.22)" },
-  pinTitle: { margin: "26px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 32, fontWeight: 700,
-    letterSpacing: 1.2, textAlign: "center", lineHeight: 1.15,
+  pinTitle: { margin: "min(3vh, 26px) 0 0", fontFamily: "Georgia, 'Times New Roman', serif",
+    fontSize: "min(8vw, 4.4vh, 32px)", fontWeight: 700, letterSpacing: 1, whiteSpace: "nowrap",
+    textAlign: "center", lineHeight: 1.15,
     background: "linear-gradient(180deg,#f6e3b4 0%,#d6a64e 55%,#a97c2e 100%)", WebkitBackgroundClip: "text",
     backgroundClip: "text", WebkitTextFillColor: "transparent", color: "#d6a64e" },
-  pinRule: { width: 96, height: 1, margin: "14px 0 0",
+  pinRule: { width: 96, height: 1, margin: "min(1.6vh, 14px) 0 0",
     background: "linear-gradient(90deg, transparent, rgba(214,166,78,0.9), transparent)" },
-  pinSub: { margin: "16px 0 0", color: "#a5a5ae", fontSize: 15, minHeight: 20, textAlign: "center" },
-  pinDots: { display: "flex", gap: 18, margin: "22px 0 30px" },
-  pinDot: { width: 15, height: 15, borderRadius: "50%", border: "1.5px solid rgba(214,166,78,0.65)",
-    background: "transparent", transition: "background .12s, border-color .12s, box-shadow .12s" },
+  pinSub: { margin: "min(1.8vh, 16px) 0 0", color: "#a5a5ae", fontSize: "min(4.2vw, 2.2vh, 15px)", textAlign: "center",
+    whiteSpace: "nowrap" },
+  pinDots: { display: "flex", gap: "min(5vw, 18px)", margin: "min(2.4vh, 22px) 0 min(1.5vh, 12px)" },
+  pinDot: { width: "min(3.8vw, 1.8vh, 15px)", height: "min(3.8vw, 1.8vh, 15px)", borderRadius: "50%",
+    border: "1.5px solid rgba(214,166,78,0.65)", background: "transparent",
+    transition: "background .12s, border-color .12s, box-shadow .12s" },
   pinDotOn: { background: "#d6a64e", borderColor: "#d6a64e", boxShadow: "0 0 12px rgba(214,166,78,0.6)" },
   pinDotErr: { background: "#f28b82", borderColor: "#f28b82", boxShadow: "0 0 12px rgba(242,139,130,0.5)" },
-  pinPad: { display: "grid", gridTemplateColumns: "repeat(3, 76px)", gap: "14px 26px", justifyContent: "center" },
-  pinKey: { width: 76, height: 76, borderRadius: "50%", border: "1px solid rgba(214,166,78,0.28)",
-    background: "rgba(255,255,255,0.045)", color: "#f0e6d2", fontSize: 30, fontWeight: 500, cursor: "pointer",
+  /* key size: the smaller of a fifth of the width or a tenth of the height, never over 76px */
+  pinPad: { display: "grid", gridTemplateColumns: "repeat(3, min(20vw, 9.6vh, 76px))",
+    gap: "min(1.6vh, 14px) min(7vw, 26px)", justifyContent: "center" },
+  pinKey: { width: "min(20vw, 9.6vh, 76px)", height: "min(20vw, 9.6vh, 76px)", borderRadius: "50%",
+    border: "1px solid rgba(214,166,78,0.28)", background: "rgba(255,255,255,0.045)", color: "#f0e6d2",
+    fontSize: "min(7.4vw, 3.6vh, 30px)", fontWeight: 500, cursor: "pointer",
     display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "transform .08s",
-    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", fontVariantNumeric: "tabular-nums" },
-  pinKeyBack: { width: 76, height: 76, borderRadius: "50%", border: "none", background: "transparent", color: "#a5a5ae",
-    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none" },
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", fontVariantNumeric: "tabular-nums", padding: 0 },
+  pinKeyBack: { width: "min(20vw, 9.6vh, 76px)", height: "min(20vw, 9.6vh, 76px)", borderRadius: "50%", border: "none",
+    background: "transparent", color: "#a5a5ae", cursor: "pointer", display: "flex", alignItems: "center",
+    justifyContent: "center", outline: "none", padding: 0 },
   todayFilterRow: { display: "flex", gap: 6, marginBottom: 10 },
   todayFilterBtn: { flex: 1, padding: "8px 0", borderRadius: 8, border: "1.5px solid #c5d4de", background: "#fff", color: "#6b7c8c", fontWeight: 600, cursor: "pointer", fontSize: 13 },
   todayFilterBtnActive: { background: "#2c5f7c", color: "#fff", borderColor: "#2c5f7c" },
